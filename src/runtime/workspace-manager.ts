@@ -3,25 +3,50 @@ import Portal from 'esri/portal/Portal'
 import { JimuMapView } from 'jimu-arcgis'
 import { Workspace, MapSessionState, WorkspacePayload, LayerConfig } from './models'
 import { React, type AllWidgetProps, css, jsx, SessionManager, getAppStore } from 'jimu-core'
+import Basemap from 'esri/Basemap'
+import FeatureLayer from 'esri/layers/FeatureLayer'
+import MapImageLayer from 'esri/layers/MapImageLayer'
+import Extent from 'esri/geometry/Extent'
 
 
 const portalTags = 'ExB-session,workspace,map-config'
 
 /**
- * This asynchronous function saves the current state of a map session, including its extent, layers, and basemap information, to an ArcGIS portal as a new item. 
- * It constructs a payload with the session data and sends it to the portal's addItem endpoint, returning a Workspace object that includes the new item's ID and title.
+ * Returns the portal URL and a valid token for REST calls.
+ */
+const getPortalSession = () => {
+  const session = SessionManager.getInstance().getMainSession()
+  const portalUrl = getAppStore().getState().portalUrl
+  return { portalUrl, token: session.token }
+}
+
+/**
+ * Ensures the portal is loaded and the user is authenticated.
+ */
+const ensurePortalUser = async (portal: Portal): Promise<void> => {
+  portal.authMode = 'immediate'
+  await portal.load()
+  if (!portal.user) throw new Error('User not authenticated')
+}
+
+// ────────────────────────────────────────────────────────────────
+//  SAVE
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Saves the current state of a map session, including its extent, layers,
+ * and basemap information, to an ArcGIS portal as a new item.
+ * Returns a Workspace object that includes the new item's ID and title.
  */
 export const saveMapSession = async (
   portal: Portal,
   data: Workspace,
   jimuMapView: JimuMapView,
-  portalTags = 'ExB-session,workspace,map-config'
+  tags = portalTags
 ): Promise<Workspace> => {
 
-  portal.authMode = 'immediate'
-  await portal.load()
+  await ensurePortalUser(portal)
 
-  if (!portal.user) throw new Error('User not authenticated')
   if (!jimuMapView?.view) throw new Error('Map view is required to save session')
 
   const view = jimuMapView.view
@@ -30,18 +55,13 @@ export const saveMapSession = async (
   const layerConfigs = await extractLayerConfigs(map.layers.toArray())
 
   const sessionState: MapSessionState = {
-    basemapId: map.basemap?.id || 'topo-vector',
+    basemapId: map.basemap?.id || undefined,
     extent: view.extent?.toJSON(),
     zoom: view.zoom,
     layers: layerConfigs
   }
 
-  let title = data.label
-//   if (data.id) {
-//     const yyyymmdd = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-//     title = `${data.label}_${yyyymmdd}`
-//   }
-// versioning for later use, for now we just overwrite existing item if id exists
+  const title = data.label
 
   const payload: WorkspacePayload = {
     workspace: true,
@@ -54,8 +74,7 @@ export const saveMapSession = async (
     }
   }
 
-  const session = SessionManager.getInstance().getMainSession()
-  const portalUrl = getAppStore().getState().portalUrl
+  const { portalUrl, token } = getPortalSession()
 
   const addItemUrl = `${portalUrl}/sharing/rest/content/users/${portal.user.username}/addItem`
 
@@ -63,8 +82,8 @@ export const saveMapSession = async (
   form.append('f', 'json')
   form.append('title', title)
   form.append('type', 'Application Configuration')
-  form.append('token', session.token)
-  form.append('tags', portalTags)
+  form.append('token', token)
+  form.append('tags', tags)
   form.append('text', JSON.stringify(payload))
 
   const response = await esriRequest(addItemUrl, {
@@ -83,6 +102,215 @@ export const saveMapSession = async (
     label: title
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+//  LIST
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Lists all saved workspace sessions for the current portal user.
+ * Searches for portal items of type "Application Configuration" that
+ * carry the workspace portal tags and belong to the authenticated user.
+ * Returns an array of Workspace objects (id + label).
+ */
+export const listMapSessions = async (
+  portal: Portal,
+  tags = portalTags
+): Promise<Workspace[]> => {
+
+  await ensurePortalUser(portal)
+
+  const { portalUrl, token } = getPortalSession()
+
+  const tagQuery = tags.split(',').map(t => `tags:"${t.trim()}"`).join(' AND ')
+  const searchQuery = `${tagQuery} AND type:"Application Configuration" AND owner:${portal.user.username}`
+
+  const searchUrl = `${portalUrl}/sharing/rest/search`
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('q', searchQuery)
+  form.append('num', '100')
+  form.append('sortField', 'modified')
+  form.append('sortOrder', 'desc')
+  form.append('token', token)
+
+  const response = await esriRequest(searchUrl, {
+    authMode: 'auto',
+    method: 'post',
+    body: form
+  })
+
+  const results: any[] = response?.data?.results || []
+
+  return results.map((item: any) => ({
+    id: item.id,
+    label: item.title
+  }))
+}
+
+// ────────────────────────────────────────────────────────────────
+//  LOAD
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Loads a previously saved workspace session from the portal and restores
+ * its map state onto the provided JimuMapView.
+ * Returns the full WorkspacePayload so the caller can inspect metadata.
+ */
+export const loadMapSession = async (
+  portal: Portal,
+  itemId: string,
+  jimuMapView: JimuMapView
+): Promise<WorkspacePayload> => {
+
+  await ensurePortalUser(portal)
+
+  if (!jimuMapView?.view) throw new Error('Map view is required to load session')
+
+  const { portalUrl, token } = getPortalSession()
+
+  // 1. Fetch the item's JSON data
+  const dataUrl = `${portalUrl}/sharing/rest/content/items/${itemId}/data`
+
+  const response = await esriRequest(dataUrl, {
+    authMode: 'auto',
+    query: { f: 'json', token }
+  })
+
+  const payload: WorkspacePayload = response?.data
+  if (!payload?.workspace) {
+    throw new Error('Item is not a valid workspace session')
+  }
+
+  const { mapSession } = payload
+  const view = jimuMapView.view
+  const map = view.map
+
+  // 2. Restore basemap
+  if (mapSession.basemapId) {
+    try {
+      map.basemap = Basemap.fromId(mapSession.basemapId) ?? map.basemap
+    } catch {
+      console.warn('Could not restore basemap', mapSession.basemapId)
+    }
+  }
+
+  // 3. Restore extent / zoom
+  if (mapSession.extent) {
+    try {
+      const extent = Extent.fromJSON(mapSession.extent)
+      await view.goTo(extent, { animate: false })
+    } catch {
+      console.warn('Could not restore extent')
+    }
+  } else if (mapSession.zoom !== undefined) {
+    await view.goTo({ zoom: mapSession.zoom }, { animate: false })
+  }
+
+  // 4. Restore layers
+  if (Array.isArray(mapSession.layers)) {
+    for (const cfg of mapSession.layers) {
+      await restoreLayerConfig(map, cfg)
+    }
+  }
+
+  return payload
+}
+
+/**
+ * Applies a saved LayerConfig onto a layer already present in the map,
+ * or creates the layer from its URL if it's missing.
+ */
+const restoreLayerConfig = async (
+  map: __esri.Map,
+  cfg: LayerConfig
+): Promise<void> => {
+  // Try to find an existing layer first
+  let layer: __esri.Layer | undefined =
+    map.layers.find(l => l.id === cfg.id) as __esri.Layer | undefined
+
+  // If not found by id, try to match by URL (for URL-backed layers)
+  if (!layer && cfg.url) {
+    layer = map.layers.find(l => (l as any).url === cfg.url) as __esri.Layer | undefined
+  }
+
+  // If still not found but we have a URL, re-create the layer
+  if (!layer && cfg.url) {
+    try {
+      if (cfg.type === 'feature') {
+        layer = new FeatureLayer({ url: cfg.url, id: cfg.id, title: cfg.title })
+      } else if (cfg.type === 'map-image') {
+        layer = new MapImageLayer({ url: cfg.url, id: cfg.id, title: cfg.title })
+      }
+      if (layer) {
+        map.add(layer)
+        await layer.load()
+      }
+    } catch (e) {
+      console.warn('Could not recreate layer', cfg.id, e)
+      return
+    }
+  }
+
+  if (!layer) {
+    console.warn('Layer not found and could not be recreated', cfg.id)
+    return
+  }
+
+  // Apply common properties
+  layer.visible = cfg.visible
+  layer.opacity = cfg.opacity
+
+  // Apply FeatureLayer-specific properties
+  if (cfg.definitionExpression !== undefined && 'definitionExpression' in layer) {
+    ;(layer as any).definitionExpression = cfg.definitionExpression
+  }
+
+  if (cfg.labelingInfo && 'labelingInfo' in layer) {
+    try {
+      ;(layer as any).labelingInfo = cfg.labelingInfo
+    } catch {
+      // ignore
+    }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+//  DELETE
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Deletes a saved workspace session item from the portal.
+ * Throws if the item cannot be deleted (permissions, network, etc.).
+ */
+export const deleteMapSession = async (
+  portal: Portal,
+  itemId: string
+): Promise<void> => {
+
+  await ensurePortalUser(portal)
+
+  const { portalUrl, token } = getPortalSession()
+
+  const deleteUrl =
+    `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${itemId}/delete`
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('token', token)
+
+  const response = await esriRequest(deleteUrl, {
+    authMode: 'auto',
+    method: 'post',
+    body: form
+  })
+
+  if (!response?.data?.success) {
+    throw new Error(response?.data?.error?.message || 'Failed to delete workspace session')
+  }
+}
+
 
 /**
  * Extract per-layer state for restoring later.
@@ -104,7 +332,7 @@ const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[
       // URL-backed layers (FeatureLayer, MapImageLayer)
       if ((layer as any).url) {
         cfg.url = (layer as any).url
-      } 
+      }
 
       // definitionExpression (FeatureLayer)
       if ((layer as any).definitionExpression !== undefined) {
@@ -131,4 +359,3 @@ const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[
 
   return configs
 }
-
