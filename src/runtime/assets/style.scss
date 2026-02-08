@@ -1,0 +1,81 @@
+.widget-save-sessions {
+    padding: 5px;
+    width: 100%;
+    display: flex;
+    flex-flow: column;
+
+    .workspaces-content-center {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+    }
+
+    .jimu-btn {
+        min-width: 120px;
+    }
+
+    .info-text {
+        color: darkblue;
+    }
+
+    .info-footer {
+        color: rgb(100, 100, 100);
+    }
+
+    .save-sessions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+        flex-grow: 1;
+        overflow-y: auto;
+    }
+
+    .save-sessions-item {
+        cursor: pointer;
+        user-select: none;
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        border: 1px solid rgb(197, 197, 197);
+    }
+
+    .save-sessions-item:hover {
+        border-color: blue;
+    }
+
+    .save-sessions-item .workspace-list-label {
+        
+    }
+
+    .save-sessions-item .workspace-list-icon-wrappers {
+        display: flex;
+    }
+
+    .save-sessions-item .workspace-list-icon-wrapper {
+        height: 100%;
+    }
+
+    .save-sessions-item .workspace-list-icon-wrapper-clickable:hover {
+        background-color: rgba($color: grey, $alpha: 0.2);
+    }
+
+    .save-sessions-item .workspace-list-icon {
+        height: 100%;
+        margin-right: 6px;
+        margin-left: 6px;
+    }
+
+    .workspace-loading-mask {
+        position: absolute;
+        z-index: 10;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba($color: grey, $alpha: 0.3);
+    }
+
+}

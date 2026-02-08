@@ -1,0 +1,24 @@
+{
+  "name": "watercare-save-session",
+  "label": "Watercare Save Session",
+  "type": "widget",
+  "version": "1.10.0",
+  "exbVersion": "1.10.0",
+  "author": "Auckland Council",
+  "description": "Allows saving of map extent and layer settings",
+  "copyright": "",
+  "license": "",
+  "properties": {},
+  "dependency": [
+    "jimu-arcgis"
+  ],
+  "translatedLocales": [
+    "en"
+  ],
+  "defaultSize": {
+    "width": 500,
+    "height": 800
+  },
+  "main": "src/runtime/widget.tsx",
+  "setting": "src/setting/setting.tsx"
+}

@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Production
+/build
+/dist
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# Logs
+*.log
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+/coverage
+
+# Misc
+.eslintcache
