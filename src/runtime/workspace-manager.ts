@@ -227,12 +227,11 @@ const restoreLayerConfig = async (
   cfg: LayerConfig
 ): Promise<void> => {
   // Try to find an existing layer first
-  let layer: __esri.Layer | undefined =
-    map.layers.find(l => l.id === cfg.id) as __esri.Layer | undefined
+  let layer = map.layers.find(l => l.id === cfg.id)
 
   // If not found by id, try to match by URL (for URL-backed layers)
   if (!layer && cfg.url) {
-    layer = map.layers.find(l => (l as any).url === cfg.url) as __esri.Layer | undefined
+    layer = map.layers.find(l => (l as any).url === cfg.url) 
   }
 
   // If still not found but we have a URL, re-create the layer
