@@ -54,8 +54,18 @@ export const saveMapSession = async (
 
   const layerConfigs = await extractLayerConfigs(map.layers.toArray())
 
+  // Save both the basemap id AND the full JSON so we can restore
+  // portal/custom basemaps that Basemap.fromId() doesn't know about
+  let basemapJSON: any = undefined
+  try {
+    basemapJSON = map.basemap?.toJSON?.()
+  } catch {
+    // ignore — we'll fall back to basemapId on restore
+  }
+
   const sessionState: MapSessionState = {
     basemapId: map.basemap?.id || undefined,
+    basemapJSON: basemapJSON,
     extent: view.extent?.toJSON(),
     zoom: view.zoom,
     layers: layerConfigs
@@ -187,10 +197,24 @@ export const loadMapSession = async (
   const view = jimuMapView.view
   const map = view.map
 
-  // 2. Restore basemap
-  if (mapSession.basemapId) {
+  // 2. Restore basemap — try full JSON first, fall back to well-known id
+  let basemapRestored = false
+  if (mapSession.basemapJSON) {
     try {
-      map.basemap = Basemap.fromId(mapSession.basemapId) ?? map.basemap
+      const restoredBasemap = Basemap.fromJSON(mapSession.basemapJSON)
+      await restoredBasemap.load()
+      map.basemap = restoredBasemap
+      basemapRestored = true
+    } catch {
+      console.warn('Could not restore basemap from JSON, trying fromId…')
+    }
+  }
+  if (!basemapRestored && mapSession.basemapId) {
+    try {
+      const wellKnown = Basemap.fromId(mapSession.basemapId)
+      if (wellKnown) {
+        map.basemap = wellKnown
+      }
     } catch {
       console.warn('Could not restore basemap', mapSession.basemapId)
     }
@@ -208,8 +232,32 @@ export const loadMapSession = async (
     await view.goTo({ zoom: mapSession.zoom }, { animate: false })
   }
 
-  // 4. Restore layers
+  // 4. Restore layers — reconcile current map layers with the saved config
   if (Array.isArray(mapSession.layers)) {
+    const savedLayerIds = new Set(mapSession.layers.map(cfg => cfg.id))
+    const savedLayerUrls = new Set(
+      mapSession.layers.filter(cfg => cfg.url).map(cfg => cfg.url)
+    )
+
+    // 4a. Remove layers that are NOT in the saved session
+    //     (skip basemap layers — those are managed by the basemap, not by us)
+    const layersToRemove: __esri.Layer[] = []
+    map.layers.forEach(layer => {
+      const matchById = savedLayerIds.has(layer.id)
+      const matchByUrl = (layer as any).url && savedLayerUrls.has((layer as any).url)
+      if (!matchById && !matchByUrl) {
+        layersToRemove.push(layer)
+      }
+    })
+    for (const layer of layersToRemove) {
+      try {
+        map.remove(layer)
+      } catch (e) {
+        console.warn('Could not remove layer', layer.id, e)
+      }
+    }
+
+    // 4b. Restore / add layers from the saved session
     for (const cfg of mapSession.layers) {
       await restoreLayerConfig(map, cfg)
     }
@@ -231,7 +279,7 @@ const restoreLayerConfig = async (
 
   // If not found by id, try to match by URL (for URL-backed layers)
   if (!layer && cfg.url) {
-    layer = map.layers.find(l => (l as any).url === cfg.url) 
+    layer = map.layers.find(l => (l as any).url === cfg.url)
   }
 
   // If still not found but we have a URL, re-create the layer

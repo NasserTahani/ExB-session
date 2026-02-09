@@ -17,6 +17,7 @@ export interface LayerConfig {
 
 export interface MapSessionState {
   basemapId: string
+  basemapJSON?: any       
   extent: any
   zoom?: number
   rotation?: number
@@ -31,4 +32,3 @@ export interface WorkspacePayload {
   mapSession: MapSessionState
   data: Workspace
 }
-
