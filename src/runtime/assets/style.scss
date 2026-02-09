@@ -46,9 +46,7 @@
         border-color: blue;
     }
 
-    .save-sessions-item .workspace-list-label {
-        
-    }
+    .save-sessions-item .workspace-list-label {}
 
     .save-sessions-item .workspace-list-icon-wrappers {
         display: flex;
@@ -78,4 +76,58 @@
         background-color: rgba($color: grey, $alpha: 0.3);
     }
 
+    .save-section {
+        margin-bottom: 8px;
+        gap: 6px;
+    }
+
+    .error-banner {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fdecea;
+        color: #b71c1c;
+        border: 1px solid #ef9a9a;
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin-bottom: 6px;
+        font-size: 13px;
+    }
+
+    .dismiss-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        color: #b71c1c;
+    }
+
+    .delete-confirm-overlay {
+        position: absolute;
+        z-index: 20;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .delete-confirm-dialog {
+        background: #fff;
+        border-radius: 6px;
+        padding: 16px 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        text-align: center;
+        min-width: 220px;
+    }
+
+    .delete-confirm-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 12px;
+    }
 }

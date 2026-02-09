@@ -2,81 +2,73 @@
 /** @jsx jsx */
 import { jsx } from 'jimu-core'
 import { useState } from 'react'
-import { Button, Modal, ModalHeader, ModalBody, ModalFooter, TextInput, Checkbox } from 'jimu-ui'
-import { Workspace } from '../models'
+import { Button, Modal, ModalHeader, ModalBody, ModalFooter, TextInput } from 'jimu-ui'
+import { type Workspace } from '../models'
 
 export interface WorkspaceItemEditorProps {
+  /** Pass an existing workspace to edit, or one with id='' for a new session. */
   data: Workspace
   onSave: (workspace: Workspace) => void
   onClose: () => void
 }
 
+/**
+ * Modal dialog used for both creating a new session and editing the label
+ * of an existing one. Only the session name is editable here — the map
+ * state (extent, layers, basemap) is captured automatically by the
+ * workspace-manager at save time.
+ */
 export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
   const [label, setLabel] = useState<string>(props.data.label)
-  const [loadStartup, setLoadStartup] = useState<boolean>(props.data.openOnLoad)
-  const [includeLayers, setIncludeLayers] = useState<boolean>(props.data.includeLayers)
-  const [includeExtent, setIncludeExtent] = useState<boolean>(props.data.includeExtent)
+
+  const isNew = !props.data.id
 
   const onTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setLabel(value)
+    setLabel(e.target.value)
   }
 
-  const onLoadStartupChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const value: boolean = e.target.checked
-    setLoadStartup(value)
-  }
-
-  const onIncludeExtentChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const value: boolean = e.target.checked
-    setIncludeExtent(value)
-  }
-
-  const onIncludeLayersChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const value: boolean = e.target.checked
-    setIncludeLayers(value)
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && label.trim()) {
+      onSaveClick()
+    }
   }
 
   const onSaveClick = () => {
-    const ws = { ...props.data }
-    ws.label = label
-    ws.openOnLoad = loadStartup
-    ws.includeLayers = includeLayers
-    ws.includeExtent = includeExtent
+    if (!label.trim()) return
+    const ws: Workspace = {
+      ...props.data,
+      label: label.trim()
+    }
     props.onSave(ws)
   }
 
   return (
-        <Modal isOpen={true}>
-            <ModalHeader>Save Current Session</ModalHeader>
-            <ModalBody>
-                <div>
-                    <label className="w-75">Name
-                        <TextInput className="w-100" value={label} onChange={onTextChange} type="text" size="lg" />
-                    </label>
-                </div>
-                <div>
-                    <Checkbox checked={includeLayers} onChange={onIncludeLayersChange} />
-                    <label className="ml-2">Layers</label>
-                </div>
-                <div>
-                    <Checkbox checked={includeExtent} onChange={onIncludeExtentChange} />
-                    <label className="ml-2">Map Extent</label>
-                </div>
-                <div>
-                    <Checkbox checked={loadStartup} onChange={onLoadStartupChange} />
-                    <label className="ml-2">Load on Startup</label>
-                </div>
-            </ModalBody>
-            <ModalFooter>
-                <Button onClick={() => props.onClose()}>
-                    Cancel
-                </Button>
-                {' '}
-                <Button type="primary" onClick={() => onSaveClick()}>
-                    {props.data.id === null ? 'Save' : 'Update'}
-                </Button>
-            </ModalFooter>
-        </Modal>
+    <Modal isOpen={true}>
+      <ModalHeader>{isNew ? 'Save Current Session' : 'Edit Session'}</ModalHeader>
+      <ModalBody>
+        <div>
+          <label className="w-75">Name
+            <TextInput
+              className="w-100"
+              value={label}
+              onChange={onTextChange}
+              onKeyDown={onKeyDown}
+              type="text"
+              size="lg"
+              placeholder="Enter session name…"
+            />
+          </label>
+        </div>
+      </ModalBody>
+      <ModalFooter>
+        <Button onClick={() => props.onClose()}>
+          Cancel
+        </Button>
+        {' '}
+        <Button type="primary" onClick={() => onSaveClick()} disabled={!label.trim()}>
+          {isNew ? 'Save' : 'Update'}
+        </Button>
+      </ModalFooter>
+    </Modal>
   )
 }
