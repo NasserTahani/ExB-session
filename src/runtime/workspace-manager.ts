@@ -38,7 +38,8 @@ const ensurePortalUser = async (portal: Portal): Promise<void> => {
  */
 const buildPayload = async (
   data: Workspace,
-  jimuMapView: JimuMapView
+  jimuMapView: JimuMapView,
+  preserveCreated?: string
 ): Promise<WorkspacePayload> => {
   if (!jimuMapView?.view) throw new Error('Map view is required to save session')
 
@@ -57,7 +58,7 @@ const buildPayload = async (
   return {
     workspace: true,
     version: '1.0',
-    created: new Date().toISOString(),
+    created: preserveCreated || new Date().toISOString(),
     mapSession: sessionState,
     data: {
       ...data,
@@ -111,8 +112,7 @@ export const saveMapSession = async (
 
   return {
     ...data,
-    id: response.data.id,
-    label: title
+    id: response.data.id
   }
 }
 
@@ -135,10 +135,19 @@ export const updateMapSession = async (
 
   if (!data.id) throw new Error('Item ID is required to update session')
 
-  const payload = await buildPayload(data, jimuMapView)
-  const title = data.label
-
   const { portalUrl, token } = getPortalSession()
+
+  // Fetch existing item to preserve the created timestamp
+  const dataUrl = `${portalUrl}/sharing/rest/content/items/${data.id}/data`
+  const existingResponse = await esriRequest(dataUrl, {
+    authMode: 'auto',
+    query: { f: 'json', token }
+  })
+  const existingPayload: WorkspacePayload = existingResponse?.data
+  const createdTimestamp = existingPayload?.created
+
+  const payload = await buildPayload(data, jimuMapView, createdTimestamp)
+  const title = data.label
 
   const updateUrl = `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${data.id}/update`
 
@@ -160,8 +169,7 @@ export const updateMapSession = async (
   }
 
   return {
-    ...data,
-    label: title
+    ...data
   }
 }
 

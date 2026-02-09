@@ -70,7 +70,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
       setError('No map view available – please connect a Map widget')
       return
     }
-    
+
     setLoading(true)
     setError(null)
     try {
@@ -99,7 +99,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
       setError('No map view available – please connect a Map widget')
       return
     }
-    
+
     setLoading(true)
     setError(null)
     try {
@@ -124,7 +124,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
 
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
-    
+
     setLoading(true)
     setError(null)
     try {
