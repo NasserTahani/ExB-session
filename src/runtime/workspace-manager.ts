@@ -6,6 +6,9 @@ import { React, type AllWidgetProps, css, jsx, SessionManager, getAppStore } fro
 import Basemap from 'esri/Basemap'
 import FeatureLayer from 'esri/layers/FeatureLayer'
 import MapImageLayer from 'esri/layers/MapImageLayer'
+import TileLayer from 'esri/layers/TileLayer'
+import VectorTileLayer from 'esri/layers/VectorTileLayer'
+import WebTileLayer from 'esri/layers/WebTileLayer'
 import Extent from 'esri/geometry/Extent'
 
 
@@ -27,6 +30,138 @@ const ensurePortalUser = async (portal: Portal): Promise<void> => {
   portal.authMode = 'immediate'
   await portal.load()
   if (!portal.user) throw new Error('User not authenticated')
+}
+
+// ────────────────────────────────────────────────────────────────
+//  BASEMAP helpers
+// ────────────────────────────────────────────────────────────────
+
+interface BasemapLayerInfo {
+  url: string
+  type: string            // 'tile' | 'vector-tile' | 'web-tile' | 'map-image'
+  title?: string
+  opacity?: number
+  visible?: boolean
+  styleUrl?: string       // for VectorTileLayer
+}
+
+interface BasemapSnapshot {
+  id: string
+  title: string
+  baseLayers: BasemapLayerInfo[]
+  referenceLayers: BasemapLayerInfo[]
+}
+
+/**
+ * Serialise one basemap layer into a plain object we can store as JSON.
+ */
+const serializeBasemapLayer = (layer: __esri.Layer): BasemapLayerInfo | null => {
+  try {
+    const info: BasemapLayerInfo = {
+      url: (layer as any).url || '',
+      type: layer.type,
+      title: layer.title,
+      opacity: layer.opacity,
+      visible: layer.visible
+    }
+    // VectorTileLayer stores the style separately
+    if (layer.type === 'vector-tile' && (layer as any).url) {
+      info.styleUrl = (layer as any).currentStyleInfo?.styleUrl || (layer as any).url
+    }
+    return info.url ? info : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Rebuild a single basemap layer from its serialised info.
+ */
+const deserializeBasemapLayer = (info: BasemapLayerInfo): __esri.Layer | null => {
+  try {
+    const opts: any = {
+      url: info.url,
+      title: info.title,
+      opacity: info.opacity ?? 1,
+      visible: info.visible ?? true
+    }
+    switch (info.type) {
+      case 'tile':
+        return new TileLayer(opts)
+      case 'vector-tile':
+        return new VectorTileLayer({ ...opts, url: info.styleUrl || info.url })
+      case 'web-tile':
+        return new WebTileLayer(opts)
+      case 'map-image':
+        return new MapImageLayer(opts)
+      default:
+        // Try TileLayer as a generic fallback for unknown basemap layer types
+        return new TileLayer(opts)
+    }
+  } catch (e) {
+    console.warn('Could not deserialize basemap layer', info, e)
+    return null
+  }
+}
+
+/**
+ * Capture the full basemap state including all its base + reference layers.
+ */
+const snapshotBasemap = (basemap: __esri.Basemap): BasemapSnapshot => {
+  const baseLayers: BasemapLayerInfo[] = []
+  const referenceLayers: BasemapLayerInfo[] = []
+
+  basemap.baseLayers?.forEach(layer => {
+    const info = serializeBasemapLayer(layer)
+    if (info) baseLayers.push(info)
+  })
+
+  basemap.referenceLayers?.forEach(layer => {
+    const info = serializeBasemapLayer(layer)
+    if (info) referenceLayers.push(info)
+  })
+
+  return {
+    id: basemap.id || '',
+    title: basemap.title || '',
+    baseLayers,
+    referenceLayers
+  }
+}
+
+/**
+ * Reconstruct a Basemap from the snapshot. Falls back to well-known id
+ * if the snapshot has no layers.
+ */
+const restoreBasemapFromSnapshot = (snapshot: BasemapSnapshot): Basemap | null => {
+  // If we have layer info, rebuild from layers
+  if (snapshot.baseLayers.length > 0) {
+    const baseLayers = snapshot.baseLayers
+      .map(deserializeBasemapLayer)
+      .filter(Boolean) as __esri.Layer[]
+
+    const referenceLayers = snapshot.referenceLayers
+      .map(deserializeBasemapLayer)
+      .filter(Boolean) as __esri.Layer[]
+
+    if (baseLayers.length > 0) {
+      return new Basemap({
+        baseLayers,
+        referenceLayers,
+        title: snapshot.title
+      })
+    }
+  }
+
+  // Fallback: try well-known id
+  if (snapshot.id) {
+    try {
+      const wellKnown = Basemap.fromId(snapshot.id)
+      if (wellKnown) return wellKnown
+    } catch { /* ignore */ }
+  }
+
+  return null
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -54,18 +189,19 @@ export const saveMapSession = async (
 
   const layerConfigs = await extractLayerConfigs(map.layers.toArray())
 
-  // Save both the basemap id AND the full JSON so we can restore
-  // portal/custom basemaps that Basemap.fromId() doesn't know about
-  let basemapJSON: any = undefined
+  // Snapshot the basemap by capturing its actual layers (URLs + types)
+  let basemapSnapshot: BasemapSnapshot | undefined
   try {
-    basemapJSON = map.basemap?.toJSON?.()
+    if (map.basemap) {
+      basemapSnapshot = snapshotBasemap(map.basemap)
+    }
   } catch {
-    // ignore — we'll fall back to basemapId on restore
+    // ignore
   }
 
   const sessionState: MapSessionState = {
     basemapId: map.basemap?.id || undefined,
-    basemapJSON: basemapJSON,
+    basemapSnapshot: basemapSnapshot,
     extent: view.extent?.toJSON(),
     zoom: view.zoom,
     layers: layerConfigs
@@ -119,9 +255,6 @@ export const saveMapSession = async (
 
 /**
  * Lists all saved workspace sessions for the current portal user.
- * Searches for portal items of type "Application Configuration" that
- * carry the workspace portal tags and belong to the authenticated user.
- * Returns an array of Workspace objects (id + label).
  */
 export const listMapSessions = async (
   portal: Portal,
@@ -166,7 +299,6 @@ export const listMapSessions = async (
 /**
  * Loads a previously saved workspace session from the portal and restores
  * its map state onto the provided JimuMapView.
- * Returns the full WorkspacePayload so the caller can inspect metadata.
  */
 export const loadMapSession = async (
   portal: Portal,
@@ -197,11 +329,28 @@ export const loadMapSession = async (
   const view = jimuMapView.view
   const map = view.map
 
-  // 2. Restore basemap — try full JSON first, fall back to well-known id
+  // 2. Restore basemap — try snapshot (layer-by-layer) first,
+  //    then legacy basemapJSON, then well-known id
   let basemapRestored = false
-  if (mapSession.basemapJSON) {
+
+  // Strategy A: restore from the layer-level snapshot (new format)
+  if (mapSession.basemapSnapshot) {
     try {
-      const restoredBasemap = Basemap.fromJSON(mapSession.basemapJSON)
+      const restoredBasemap = restoreBasemapFromSnapshot(mapSession.basemapSnapshot)
+      if (restoredBasemap) {
+        await restoredBasemap.load()
+        map.basemap = restoredBasemap
+        basemapRestored = true
+      }
+    } catch (e) {
+      console.warn('Could not restore basemap from snapshot', e)
+    }
+  }
+
+  // Strategy B: legacy — restore from basemapJSON (old format, backward compat)
+  if (!basemapRestored && (mapSession as any).basemapJSON) {
+    try {
+      const restoredBasemap = Basemap.fromJSON((mapSession as any).basemapJSON)
       await restoredBasemap.load()
       map.basemap = restoredBasemap
       basemapRestored = true
@@ -209,15 +358,22 @@ export const loadMapSession = async (
       console.warn('Could not restore basemap from JSON, trying fromId…')
     }
   }
+
+  // Strategy C: well-known id fallback
   if (!basemapRestored && mapSession.basemapId) {
     try {
       const wellKnown = Basemap.fromId(mapSession.basemapId)
       if (wellKnown) {
         map.basemap = wellKnown
+        basemapRestored = true
       }
     } catch {
       console.warn('Could not restore basemap', mapSession.basemapId)
     }
+  }
+
+  if (!basemapRestored) {
+    console.warn('Basemap could not be restored by any strategy')
   }
 
   // 3. Restore extent / zoom
@@ -240,7 +396,6 @@ export const loadMapSession = async (
     )
 
     // 4a. Remove layers that are NOT in the saved session
-    //     (skip basemap layers — those are managed by the basemap, not by us)
     const layersToRemove: __esri.Layer[] = []
     map.layers.forEach(layer => {
       const matchById = savedLayerIds.has(layer.id)
@@ -274,15 +429,12 @@ const restoreLayerConfig = async (
   map: __esri.Map,
   cfg: LayerConfig
 ): Promise<void> => {
-  // Try to find an existing layer first
   let layer = map.layers.find(l => l.id === cfg.id)
 
-  // If not found by id, try to match by URL (for URL-backed layers)
   if (!layer && cfg.url) {
     layer = map.layers.find(l => (l as any).url === cfg.url)
   }
 
-  // If still not found but we have a URL, re-create the layer
   if (!layer && cfg.url) {
     try {
       if (cfg.type === 'feature') {
@@ -305,11 +457,9 @@ const restoreLayerConfig = async (
     return
   }
 
-  // Apply common properties
   layer.visible = cfg.visible
   layer.opacity = cfg.opacity
 
-  // Apply FeatureLayer-specific properties
   if (cfg.definitionExpression !== undefined && 'definitionExpression' in layer) {
     ;(layer as any).definitionExpression = cfg.definitionExpression
   }
@@ -329,7 +479,6 @@ const restoreLayerConfig = async (
 
 /**
  * Deletes a saved workspace session item from the portal.
- * Throws if the item cannot be deleted (permissions, network, etc.).
  */
 export const deleteMapSession = async (
   portal: Portal,
@@ -361,7 +510,6 @@ export const deleteMapSession = async (
 
 /**
  * Extract per-layer state for restoring later.
- * Extend this as needed (supports FeatureLayer properties best).
  */
 const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[]> => {
   const configs: LayerConfig[] = []
@@ -376,17 +524,14 @@ const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[
         opacity: layer.opacity
       }
 
-      // URL-backed layers (FeatureLayer, MapImageLayer)
       if ((layer as any).url) {
         cfg.url = (layer as any).url
       }
 
-      // definitionExpression (FeatureLayer)
       if ((layer as any).definitionExpression !== undefined) {
         cfg.definitionExpression = (layer as any).definitionExpression
       }
 
-      // labeling info (FeatureLayer)
       if (Array.isArray((layer as any).labelingInfo)) {
         try {
           cfg.labelingInfo = (layer as any).labelingInfo.map((li: any) =>
@@ -399,7 +544,6 @@ const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[
 
       configs.push(cfg)
     } catch (e) {
-      // Keep going if a layer cannot be serialized
       console.warn('Failed to extract layer config', layer?.id, e)
     }
   }

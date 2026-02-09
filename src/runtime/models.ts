@@ -17,7 +17,8 @@ export interface LayerConfig {
 
 export interface MapSessionState {
   basemapId: string
-  basemapJSON?: any       
+  basemapJSON?: any            
+  basemapSnapshot?: any        
   extent: any
   zoom?: number
   rotation?: number
