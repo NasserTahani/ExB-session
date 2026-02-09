@@ -1,5 +1,6 @@
 import esriRequest from 'esri/request'
 import Portal from 'esri/portal/Portal'
+import PortalItem from 'esri/portal/PortalItem'
 import { JimuMapView } from 'jimu-arcgis'
 import { Workspace, MapSessionState, WorkspacePayload, LayerConfig } from './models'
 import { React, type AllWidgetProps, css, jsx, SessionManager, getAppStore } from 'jimu-core'
@@ -49,10 +50,36 @@ const buildPayload = async (
   const layerConfigs = await extractLayerConfigs(map.layers.toArray())
 
   const sessionState: MapSessionState = {
-    basemapId: map.basemap?.id || undefined,
     extent: view.extent?.toJSON(),
     zoom: view.zoom,
     layers: layerConfigs
+  }
+
+  // Save basemap information
+  if (map.basemap) {
+    const basemap = map.basemap
+    
+    // If basemap has a portalItem, save that for custom basemaps
+    if (basemap.portalItem) {
+      sessionState.basemapPortalItem = {
+        id: basemap.portalItem.id,
+        portal: basemap.portalItem.portal ? {
+          url: basemap.portalItem.portal.url
+        } : undefined
+      }
+    }
+    
+    // Save the basemap ID (for well-known basemaps)
+    if (basemap.id) {
+      sessionState.basemapId = basemap.id
+    }
+    
+    // As fallback, save the full basemap JSON for complete restoration
+    try {
+      sessionState.basemapJSON = basemap.toJSON()
+    } catch (e) {
+      console.warn('Could not serialize basemap to JSON', e)
+    }
   }
 
   return {
@@ -261,11 +288,35 @@ export const loadMapSession = async (
   const map = view.map
 
   // 2. Restore basemap
-  if (mapSession.basemapId) {
+  if (mapSession.basemapPortalItem) {
+    // Custom basemap from portal item
     try {
-      map.basemap = Basemap.fromId(mapSession.basemapId) ?? map.basemap
-    } catch {
-      console.warn('Could not restore basemap', mapSession.basemapId)
+      const portalItem = new PortalItem({
+        id: mapSession.basemapPortalItem.id,
+        portal: mapSession.basemapPortalItem.portal ? 
+          new Portal({ url: mapSession.basemapPortalItem.portal.url }) : 
+          portal
+      })
+      map.basemap = new Basemap({ portalItem })
+    } catch (e) {
+      console.warn('Could not restore basemap from portalItem', mapSession.basemapPortalItem, e)
+    }
+  } else if (mapSession.basemapJSON) {
+    // Restore from full JSON
+    try {
+      map.basemap = Basemap.fromJSON(mapSession.basemapJSON)
+    } catch (e) {
+      console.warn('Could not restore basemap from JSON', e)
+    }
+  } else if (mapSession.basemapId) {
+    // Well-known basemap ID
+    try {
+      const basemap = Basemap.fromId(mapSession.basemapId)
+      if (basemap) {
+        map.basemap = basemap
+      }
+    } catch (e) {
+      console.warn('Could not restore basemap from ID', mapSession.basemapId, e)
     }
   }
 
