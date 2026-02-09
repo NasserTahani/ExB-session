@@ -16,7 +16,14 @@ export interface LayerConfig {
 }
 
 export interface MapSessionState {
-  basemapId: string
+  basemapId?: string
+  basemapPortalItem?: {
+    id: string
+    portal?: {
+      url: string
+    }
+  }
+  basemapJSON?: any
   extent: any
   zoom?: number
   rotation?: number

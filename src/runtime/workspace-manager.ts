@@ -1,5 +1,6 @@
 import esriRequest from 'esri/request'
 import Portal from 'esri/portal/Portal'
+import PortalItem from 'esri/portal/PortalItem'
 import { JimuMapView } from 'jimu-arcgis'
 import { Workspace, MapSessionState, WorkspacePayload, LayerConfig } from './models'
 import { React, type AllWidgetProps, css, jsx, SessionManager, getAppStore } from 'jimu-core'
@@ -30,6 +31,69 @@ const ensurePortalUser = async (portal: Portal): Promise<void> => {
 }
 
 // ────────────────────────────────────────────────────────────────
+//  SAVE / UPDATE (shared payload builder)
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Builds the payload containing map session state for saving/updating.
+ */
+const buildPayload = async (
+  data: Workspace,
+  jimuMapView: JimuMapView,
+  createdTimestamp?: string
+): Promise<WorkspacePayload> => {
+  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
+
+  const view = jimuMapView.view
+  const map = view.map
+
+  const layerConfigs = await extractLayerConfigs(map.layers.toArray())
+
+  const sessionState: MapSessionState = {
+    extent: view.extent?.toJSON(),
+    zoom: view.zoom,
+    layers: layerConfigs
+  }
+
+  // Save basemap information
+  if (map.basemap) {
+    const basemap = map.basemap
+    
+    // If basemap has a portalItem, save that for custom basemaps
+    if (basemap.portalItem) {
+      sessionState.basemapPortalItem = {
+        id: basemap.portalItem.id,
+        portal: basemap.portalItem.portal ? {
+          url: basemap.portalItem.portal.url
+        } : undefined
+      }
+    }
+    
+    // Save the basemap ID (for well-known basemaps)
+    if (basemap.id) {
+      sessionState.basemapId = basemap.id
+    }
+    
+    // As fallback, save the full basemap JSON for complete restoration
+    try {
+      sessionState.basemapJSON = basemap.toJSON()
+    } catch (e) {
+      console.warn('Could not serialize basemap to JSON', e)
+    }
+  }
+
+  return {
+    workspace: true,
+    version: '1.0',
+    created: createdTimestamp || new Date().toISOString(),
+    mapSession: sessionState,
+    data: {
+      ...data
+    }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 //  SAVE
 // ────────────────────────────────────────────────────────────────
 
@@ -47,32 +111,8 @@ export const saveMapSession = async (
 
   await ensurePortalUser(portal)
 
-  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
-
-  const view = jimuMapView.view
-  const map = view.map
-
-  const layerConfigs = await extractLayerConfigs(map.layers.toArray())
-
-  const sessionState: MapSessionState = {
-    basemapId: map.basemap?.id || undefined,
-    extent: view.extent?.toJSON(),
-    zoom: view.zoom,
-    layers: layerConfigs
-  }
-
+  const payload = await buildPayload(data, jimuMapView)
   const title = data.label
-
-  const payload: WorkspacePayload = {
-    workspace: true,
-    version: '1.0',
-    created: new Date().toISOString(),
-    mapSession: sessionState,
-    data: {
-      ...data,
-      label: title
-    }
-  }
 
   const { portalUrl, token } = getPortalSession()
 
@@ -98,8 +138,68 @@ export const saveMapSession = async (
 
   return {
     ...data,
-    id: response.data.id,
-    label: title
+    id: response.data.id
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+//  UPDATE
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Updates an existing workspace session item in the portal.
+ * Returns the updated Workspace object.
+ */
+export const updateMapSession = async (
+  portal: Portal,
+  data: Workspace,
+  jimuMapView: JimuMapView,
+  tags = portalTags
+): Promise<Workspace> => {
+
+  await ensurePortalUser(portal)
+
+  if (!data.id) throw new Error('Item ID is required to update session')
+
+  const { portalUrl, token } = getPortalSession()
+
+  // Fetch existing item to preserve the created timestamp
+  const dataUrl = `${portalUrl}/sharing/rest/content/items/${data.id}/data`
+  const existingResponse = await esriRequest(dataUrl, {
+    authMode: 'auto',
+    query: { f: 'json', token }
+  })
+  const existingPayload: WorkspacePayload = existingResponse?.data
+
+  if (!existingPayload?.created) {
+    console.warn('Could not retrieve original created timestamp, using current timestamp')
+  }
+  const createdTimestamp = existingPayload?.created
+
+  const payload = await buildPayload(data, jimuMapView, createdTimestamp)
+  const title = data.label
+
+  const updateUrl = `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${data.id}/update`
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('title', title)
+  form.append('token', token)
+  form.append('tags', tags)
+  form.append('text', JSON.stringify(payload))
+
+  const response = await esriRequest(updateUrl, {
+    authMode: 'auto',
+    method: 'post',
+    body: form
+  })
+
+  if (!response?.data?.success) {
+    throw new Error(response?.data?.error?.message || 'Failed to update workspace session')
+  }
+
+  return {
+    ...data
   }
 }
 
@@ -188,11 +288,35 @@ export const loadMapSession = async (
   const map = view.map
 
   // 2. Restore basemap
-  if (mapSession.basemapId) {
+  if (mapSession.basemapPortalItem) {
+    // Custom basemap from portal item
     try {
-      map.basemap = Basemap.fromId(mapSession.basemapId) ?? map.basemap
-    } catch {
-      console.warn('Could not restore basemap', mapSession.basemapId)
+      const portalItem = new PortalItem({
+        id: mapSession.basemapPortalItem.id,
+        portal: mapSession.basemapPortalItem.portal ? 
+          new Portal({ url: mapSession.basemapPortalItem.portal.url }) : 
+          portal
+      })
+      map.basemap = new Basemap({ portalItem })
+    } catch (e) {
+      console.warn('Could not restore basemap from portalItem', mapSession.basemapPortalItem, e)
+    }
+  } else if (mapSession.basemapJSON) {
+    // Restore from full JSON
+    try {
+      map.basemap = Basemap.fromJSON(mapSession.basemapJSON)
+    } catch (e) {
+      console.warn('Could not restore basemap from JSON', e)
+    }
+  } else if (mapSession.basemapId) {
+    // Well-known basemap ID
+    try {
+      const basemap = Basemap.fromId(mapSession.basemapId)
+      if (basemap) {
+        map.basemap = basemap
+      }
+    } catch (e) {
+      console.warn('Could not restore basemap from ID', mapSession.basemapId, e)
     }
   }
 
