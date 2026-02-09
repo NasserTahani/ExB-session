@@ -30,6 +30,43 @@ const ensurePortalUser = async (portal: Portal): Promise<void> => {
 }
 
 // ────────────────────────────────────────────────────────────────
+//  SAVE / UPDATE (shared payload builder)
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Builds the payload containing map session state for saving/updating.
+ */
+const buildPayload = async (
+  data: Workspace,
+  jimuMapView: JimuMapView
+): Promise<WorkspacePayload> => {
+  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
+
+  const view = jimuMapView.view
+  const map = view.map
+
+  const layerConfigs = await extractLayerConfigs(map.layers.toArray())
+
+  const sessionState: MapSessionState = {
+    basemapId: map.basemap?.id || undefined,
+    extent: view.extent?.toJSON(),
+    zoom: view.zoom,
+    layers: layerConfigs
+  }
+
+  return {
+    workspace: true,
+    version: '1.0',
+    created: new Date().toISOString(),
+    mapSession: sessionState,
+    data: {
+      ...data,
+      label: data.label
+    }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 //  SAVE
 // ────────────────────────────────────────────────────────────────
 
@@ -47,32 +84,8 @@ export const saveMapSession = async (
 
   await ensurePortalUser(portal)
 
-  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
-
-  const view = jimuMapView.view
-  const map = view.map
-
-  const layerConfigs = await extractLayerConfigs(map.layers.toArray())
-
-  const sessionState: MapSessionState = {
-    basemapId: map.basemap?.id || undefined,
-    extent: view.extent?.toJSON(),
-    zoom: view.zoom,
-    layers: layerConfigs
-  }
-
+  const payload = await buildPayload(data, jimuMapView)
   const title = data.label
-
-  const payload: WorkspacePayload = {
-    workspace: true,
-    version: '1.0',
-    created: new Date().toISOString(),
-    mapSession: sessionState,
-    data: {
-      ...data,
-      label: title
-    }
-  }
 
   const { portalUrl, token } = getPortalSession()
 
@@ -99,6 +112,55 @@ export const saveMapSession = async (
   return {
     ...data,
     id: response.data.id,
+    label: title
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+//  UPDATE
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Updates an existing workspace session item in the portal.
+ * Returns the updated Workspace object.
+ */
+export const updateMapSession = async (
+  portal: Portal,
+  data: Workspace,
+  jimuMapView: JimuMapView,
+  tags = portalTags
+): Promise<Workspace> => {
+
+  await ensurePortalUser(portal)
+
+  if (!data.id) throw new Error('Item ID is required to update session')
+
+  const payload = await buildPayload(data, jimuMapView)
+  const title = data.label
+
+  const { portalUrl, token } = getPortalSession()
+
+  const updateUrl = `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${data.id}/update`
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('title', title)
+  form.append('token', token)
+  form.append('tags', tags)
+  form.append('text', JSON.stringify(payload))
+
+  const response = await esriRequest(updateUrl, {
+    authMode: 'auto',
+    method: 'post',
+    body: form
+  })
+
+  if (!response?.data?.success) {
+    throw new Error(response?.data?.error?.message || 'Failed to update workspace session')
+  }
+
+  return {
+    ...data,
     label: title
   }
 }

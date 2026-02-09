@@ -6,6 +6,7 @@ import { type IMConfig } from '../config'
 import { type Workspace } from './models'
 import {
   saveMapSession,
+  updateMapSession,
   listMapSessions,
   loadMapSession,
   deleteMapSession
@@ -20,7 +21,8 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   const { useMapWidgetIds } = props
 
   // ── state ──
-  const [jimuMapView, setJimuMapView] = useState<JimuMapView | null>(null)
+  const jimuMapViewRef = useRef<JimuMapView | null>(null)
+  const [mapViewReady, setMapViewReady] = useState(false)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,48 +43,74 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     return portalRef.current
   }, [])
 
-  // ── wrap async actions with loading / error handling ──
-  const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+  // ── private helper: fetch sessions without managing loading state ──
+  const fetchSessions = useCallback(async (): Promise<Workspace[]> => {
+    return await listMapSessions(getPortal())
+  }, [getPortal])
+
+  // ── refresh the session list (with loading state) ──
+  const refreshList = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      return await fn()
+      const list = await fetchSessions()
+      setWorkspaces(list)
     } catch (e: any) {
       console.error(e)
       setError(e?.message || 'An unexpected error occurred')
-      return undefined
     } finally {
       setLoading(false)
     }
-  }, [])
-
-  // ── refresh the session list ──
-  const refreshList = useCallback(async () => {
-    const list = await run(() => listMapSessions(getPortal()))
-    if (list) setWorkspaces(list)
-  }, [getPortal, run])
+  }, [fetchSessions])
 
   // ── SAVE / UPDATE (from editor modal) ──
   const handleEditorSave = useCallback(async (ws: Workspace) => {
+    const jimuMapView = jimuMapViewRef.current
     if (!jimuMapView) {
       setError('No map view available – please connect a Map widget')
       return
     }
-    const saved = await run(() => saveMapSession(getPortal(), ws, jimuMapView))
-    if (saved) {
+    
+    setLoading(true)
+    setError(null)
+    try {
+      // Use updateMapSession if ws.id exists, otherwise saveMapSession
+      if (ws.id) {
+        await updateMapSession(getPortal(), ws, jimuMapView)
+      } else {
+        await saveMapSession(getPortal(), ws, jimuMapView)
+      }
+      // Fetch and update the list directly
+      const list = await fetchSessions()
+      setWorkspaces(list)
       setEditorData(null)
-      await refreshList()
+    } catch (e: any) {
+      console.error(e)
+      setError(e?.message || 'An unexpected error occurred')
+    } finally {
+      setLoading(false)
     }
-  }, [jimuMapView, getPortal, run, refreshList])
+  }, [getPortal, fetchSessions])
 
   // ── LOAD (click on a row) ──
   const handleWorkspaceOpen = useCallback(async (ws: Workspace) => {
+    const jimuMapView = jimuMapViewRef.current
     if (!jimuMapView) {
       setError('No map view available – please connect a Map widget')
       return
     }
-    await run(() => loadMapSession(getPortal(), ws.id, jimuMapView))
-  }, [jimuMapView, getPortal, run])
+    
+    setLoading(true)
+    setError(null)
+    try {
+      await loadMapSession(getPortal(), ws.id, jimuMapView)
+    } catch (e: any) {
+      console.error(e)
+      setError(e?.message || 'An unexpected error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }, [getPortal])
 
   // ── EDIT (pencil icon → open modal with existing data) ──
   const handleWorkspaceEdit = useCallback((ws: Workspace) => {
@@ -96,21 +124,34 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
 
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
-    await run(() => deleteMapSession(getPortal(), confirmDelete.id))
-    setConfirmDelete(null)
-    await refreshList()
-  }, [confirmDelete, getPortal, run, refreshList])
+    
+    setLoading(true)
+    setError(null)
+    try {
+      await deleteMapSession(getPortal(), confirmDelete.id)
+      // Fetch and update the list directly
+      const list = await fetchSessions()
+      setWorkspaces(list)
+      setConfirmDelete(null)
+    } catch (e: any) {
+      console.error(e)
+      setError(e?.message || 'An unexpected error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }, [confirmDelete, getPortal, fetchSessions])
 
   // ── map view ready → fetch list ──
   const onActiveViewChange = useCallback((jmv: JimuMapView) => {
-    setJimuMapView(jmv)
+    jimuMapViewRef.current = jmv
+    setMapViewReady(true)
   }, [])
 
   useEffect(() => {
-    if (jimuMapView) {
+    if (mapViewReady) {
       refreshList()
     }
-  }, [jimuMapView, refreshList])
+  }, [mapViewReady, refreshList])
 
   // ────────────────────────────────────────────────────────────────
   //  Render
@@ -146,13 +187,6 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
           onClick={() => setEditorData({ id: '', label: '' })}
         >
           Save Current Session
-        </button>
-        <button
-          className="jimu-btn"
-          disabled={loading}
-          onClick={refreshList}
-        >
-          Refresh
         </button>
       </div>
 
