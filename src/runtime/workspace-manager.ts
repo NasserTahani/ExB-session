@@ -61,8 +61,7 @@ const buildPayload = async (
     created: preserveCreated || new Date().toISOString(),
     mapSession: sessionState,
     data: {
-      ...data,
-      label: data.label
+      ...data
     }
   }
 }

@@ -48,20 +48,25 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     return await listMapSessions(getPortal())
   }, [getPortal])
 
+  // ── private helper: refresh workspaces list ──
+  const refreshWorkspaces = useCallback(async () => {
+    const list = await fetchSessions()
+    setWorkspaces(list)
+  }, [fetchSessions])
+
   // ── refresh the session list (with loading state) ──
   const refreshList = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const list = await fetchSessions()
-      setWorkspaces(list)
+      await refreshWorkspaces()
     } catch (e: any) {
       console.error(e)
       setError(e?.message || 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }
-  }, [fetchSessions])
+  }, [refreshWorkspaces])
 
   // ── SAVE / UPDATE (from editor modal) ──
   const handleEditorSave = useCallback(async (ws: Workspace) => {
@@ -81,8 +86,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         await saveMapSession(getPortal(), ws, jimuMapView)
       }
       // Fetch and update the list directly
-      const list = await fetchSessions()
-      setWorkspaces(list)
+      await refreshWorkspaces()
       setEditorData(null)
     } catch (e: any) {
       console.error(e)
@@ -90,7 +94,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     } finally {
       setLoading(false)
     }
-  }, [getPortal, fetchSessions])
+  }, [getPortal, refreshWorkspaces])
 
   // ── LOAD (click on a row) ──
   const handleWorkspaceOpen = useCallback(async (ws: Workspace) => {
@@ -130,8 +134,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     try {
       await deleteMapSession(getPortal(), confirmDelete.id)
       // Fetch and update the list directly
-      const list = await fetchSessions()
-      setWorkspaces(list)
+      await refreshWorkspaces()
       setConfirmDelete(null)
     } catch (e: any) {
       console.error(e)
@@ -139,7 +142,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     } finally {
       setLoading(false)
     }
-  }, [confirmDelete, getPortal, fetchSessions])
+  }, [confirmDelete, getPortal, refreshWorkspaces])
 
   // ── map view ready → fetch list ──
   const onActiveViewChange = useCallback((jmv: JimuMapView) => {
