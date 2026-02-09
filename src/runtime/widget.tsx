@@ -44,11 +44,13 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   }, [])
 
   // ── private helper: fetch sessions without managing loading state ──
+  // Note: Errors are not caught here; they propagate to callers which handle them
   const fetchSessions = useCallback(async (): Promise<Workspace[]> => {
     return await listMapSessions(getPortal())
   }, [getPortal])
 
   // ── private helper: refresh workspaces list ──
+  // Note: Errors are not caught here; they propagate to callers which handle them
   const refreshWorkspaces = useCallback(async () => {
     const list = await fetchSessions()
     setWorkspaces(list)

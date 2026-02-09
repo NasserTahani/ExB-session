@@ -39,7 +39,7 @@ const ensurePortalUser = async (portal: Portal): Promise<void> => {
 const buildPayload = async (
   data: Workspace,
   jimuMapView: JimuMapView,
-  preserveCreated?: string
+  createdTimestamp?: string
 ): Promise<WorkspacePayload> => {
   if (!jimuMapView?.view) throw new Error('Map view is required to save session')
 
@@ -58,7 +58,7 @@ const buildPayload = async (
   return {
     workspace: true,
     version: '1.0',
-    created: preserveCreated || new Date().toISOString(),
+    created: createdTimestamp || new Date().toISOString(),
     mapSession: sessionState,
     data: {
       ...data
@@ -143,6 +143,10 @@ export const updateMapSession = async (
     query: { f: 'json', token }
   })
   const existingPayload: WorkspacePayload = existingResponse?.data
+
+  if (!existingPayload?.created) {
+    console.warn('Could not retrieve original created timestamp, using current timestamp')
+  }
   const createdTimestamp = existingPayload?.created
 
   const payload = await buildPayload(data, jimuMapView, createdTimestamp)
