@@ -71,9 +71,18 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     const saved = await run(() => saveMapSession(getPortal(), ws, jimuMapView))
     if (saved) {
       setEditorData(null)
-      await refreshList()
+      // Do NOT call refreshList() here — the portal search index
+      // has eventual consistency and won't return the new item yet.
+      // Instead, update the local list directly.
+      setWorkspaces(prev => {
+        const exists = prev.some(w => w.id === saved.id)
+        if (exists) {
+          return prev.map(w => w.id === saved.id ? saved : w)
+        }
+        return [saved, ...prev]
+      })
     }
-  }, [jimuMapView, getPortal, run, refreshList])
+  }, [jimuMapView, getPortal, run])
 
   // ── LOAD (click on a row) ──
   const handleWorkspaceOpen = useCallback(async (ws: Workspace) => {
@@ -97,9 +106,10 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
     await run(() => deleteMapSession(getPortal(), confirmDelete.id))
+    // Optimistically remove from local list instead of refreshList()
+    setWorkspaces(prev => prev.filter(w => w.id !== confirmDelete.id))
     setConfirmDelete(null)
-    await refreshList()
-  }, [confirmDelete, getPortal, run, refreshList])
+  }, [confirmDelete, getPortal, run])
 
   // ── map view ready → fetch list ──
   const onActiveViewChange = useCallback((jmv: JimuMapView) => {
