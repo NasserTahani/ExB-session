@@ -2,7 +2,7 @@ import esriRequest from 'esri/request'
 import Portal from 'esri/portal/Portal'
 import { JimuMapView } from 'jimu-arcgis'
 import { Workspace, MapSessionState, WorkspacePayload, LayerConfig } from './models'
-import { React, type AllWidgetProps, css, jsx, SessionManager, getAppStore } from 'jimu-core'
+import { SessionManager, getAppStore } from 'jimu-core'
 import Basemap from 'esri/Basemap'
 import FeatureLayer from 'esri/layers/FeatureLayer'
 import MapImageLayer from 'esri/layers/MapImageLayer'
@@ -38,11 +38,11 @@ const ensurePortalUser = async (portal: Portal): Promise<void> => {
 
 interface BasemapLayerInfo {
   url: string
-  type: string            // 'tile' | 'vector-tile' | 'web-tile' | 'map-image'
+  type: string
   title?: string
   opacity?: number
   visible?: boolean
-  styleUrl?: string       // for VectorTileLayer
+  styleUrl?: string
 }
 
 interface BasemapSnapshot {
@@ -52,9 +52,6 @@ interface BasemapSnapshot {
   referenceLayers: BasemapLayerInfo[]
 }
 
-/**
- * Serialise one basemap layer into a plain object we can store as JSON.
- */
 const serializeBasemapLayer = (layer: __esri.Layer): BasemapLayerInfo | null => {
   try {
     const info: BasemapLayerInfo = {
@@ -64,7 +61,6 @@ const serializeBasemapLayer = (layer: __esri.Layer): BasemapLayerInfo | null => 
       opacity: layer.opacity,
       visible: layer.visible
     }
-    // VectorTileLayer stores the style separately
     if (layer.type === 'vector-tile' && (layer as any).url) {
       info.styleUrl = (layer as any).currentStyleInfo?.styleUrl || (layer as any).url
     }
@@ -74,9 +70,6 @@ const serializeBasemapLayer = (layer: __esri.Layer): BasemapLayerInfo | null => 
   }
 }
 
-/**
- * Rebuild a single basemap layer from its serialised info.
- */
 const deserializeBasemapLayer = (info: BasemapLayerInfo): __esri.Layer | null => {
   try {
     const opts: any = {
@@ -95,7 +88,6 @@ const deserializeBasemapLayer = (info: BasemapLayerInfo): __esri.Layer | null =>
       case 'map-image':
         return new MapImageLayer(opts)
       default:
-        // Try TileLayer as a generic fallback for unknown basemap layer types
         return new TileLayer(opts)
     }
   } catch (e) {
@@ -104,9 +96,6 @@ const deserializeBasemapLayer = (info: BasemapLayerInfo): __esri.Layer | null =>
   }
 }
 
-/**
- * Capture the full basemap state including all its base + reference layers.
- */
 const snapshotBasemap = (basemap: __esri.Basemap): BasemapSnapshot => {
   const baseLayers: BasemapLayerInfo[] = []
   const referenceLayers: BasemapLayerInfo[] = []
@@ -129,12 +118,7 @@ const snapshotBasemap = (basemap: __esri.Basemap): BasemapSnapshot => {
   }
 }
 
-/**
- * Reconstruct a Basemap from the snapshot. Falls back to well-known id
- * if the snapshot has no layers.
- */
 const restoreBasemapFromSnapshot = (snapshot: BasemapSnapshot): Basemap | null => {
-  // If we have layer info, rebuild from layers
   if (snapshot.baseLayers.length > 0) {
     const baseLayers = snapshot.baseLayers
       .map(deserializeBasemapLayer)
@@ -153,7 +137,6 @@ const restoreBasemapFromSnapshot = (snapshot: BasemapSnapshot): Basemap | null =
     }
   }
 
-  // Fallback: try well-known id
   if (snapshot.id) {
     try {
       const wellKnown = Basemap.fromId(snapshot.id)
@@ -165,31 +148,18 @@ const restoreBasemapFromSnapshot = (snapshot: BasemapSnapshot): Basemap | null =
 }
 
 // ────────────────────────────────────────────────────────────────
-//  SAVE
+//  SHARED: build the map session payload
 // ────────────────────────────────────────────────────────────────
 
-/**
- * Saves the current state of a map session, including its extent, layers,
- * and basemap information, to an ArcGIS portal as a new item.
- * Returns a Workspace object that includes the new item's ID and title.
- */
-export const saveMapSession = async (
-  portal: Portal,
+const buildPayload = async (
   data: Workspace,
-  jimuMapView: JimuMapView,
-  tags = portalTags
-): Promise<Workspace> => {
-
-  await ensurePortalUser(portal)
-
-  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
-
+  jimuMapView: JimuMapView
+): Promise<{ payload: WorkspacePayload; title: string }> => {
   const view = jimuMapView.view
   const map = view.map
 
   const layerConfigs = await extractLayerConfigs(map.layers.toArray())
 
-  // Snapshot the basemap by capturing its actual layers (URLs + types)
   let basemapSnapshot: BasemapSnapshot | undefined
   try {
     if (map.basemap) {
@@ -214,15 +184,28 @@ export const saveMapSession = async (
     version: '1.0',
     created: new Date().toISOString(),
     mapSession: sessionState,
-    data: {
-      ...data,
-      label: title
-    }
+    data: { ...data, label: title }
   }
 
-  const { portalUrl, token } = getPortalSession()
+  return { payload, title }
+}
 
-  const addItemUrl = `${portalUrl}/sharing/rest/content/users/${portal.user.username}/addItem`
+// ────────────────────────────────────────────────────────────────
+//  SAVE (create new item)
+// ────────────────────────────────────────────────────────────────
+
+export const saveMapSession = async (
+  portal: Portal,
+  data: Workspace,
+  jimuMapView: JimuMapView,
+  tags = portalTags
+): Promise<Workspace> => {
+
+  await ensurePortalUser(portal)
+  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
+
+  const { payload, title } = await buildPayload(data, jimuMapView)
+  const { portalUrl, token } = getPortalSession()
 
   const form = new FormData()
   form.append('f', 'json')
@@ -232,30 +215,61 @@ export const saveMapSession = async (
   form.append('tags', tags)
   form.append('text', JSON.stringify(payload))
 
-  const response = await esriRequest(addItemUrl, {
-    authMode: 'auto',
-    method: 'post',
-    body: form
-  })
+  const response = await esriRequest(
+    `${portalUrl}/sharing/rest/content/users/${portal.user.username}/addItem`,
+    { authMode: 'auto', method: 'post', body: form }
+  )
 
   if (!response?.data?.success) {
     throw new Error(response?.data?.error?.message || 'Failed to save workspace session')
   }
 
-  return {
-    ...data,
-    id: response.data.id,
-    label: title
-  }
+  return { ...data, id: response.data.id, label: title }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  LIST
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+//  UPDATE (overwrite existing item)
+// ────────────────────────────────────────────────────────────────
 
-/**
- * Lists all saved workspace sessions for the current portal user.
- */
+export const updateMapSession = async (
+  portal: Portal,
+  data: Workspace,
+  jimuMapView: JimuMapView,
+  tags = portalTags
+): Promise<Workspace> => {
+
+  await ensurePortalUser(portal)
+  if (!jimuMapView?.view) throw new Error('Map view is required to save session')
+  if (!data.id) throw new Error('Cannot update a session without an ID')
+
+  const { payload, title } = await buildPayload(data, jimuMapView)
+  payload.modified = new Date().toISOString()
+
+  const { portalUrl, token } = getPortalSession()
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('title', title)
+  form.append('token', token)
+  form.append('tags', tags)
+  form.append('text', JSON.stringify(payload))
+
+  const response = await esriRequest(
+    `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${data.id}/update`,
+    { authMode: 'auto', method: 'post', body: form }
+  )
+
+  if (!response?.data?.success) {
+    throw new Error(response?.data?.error?.message || 'Failed to update workspace session')
+  }
+
+  return { ...data, label: title }
+}
+
+// ────────────────────────────────────────────────────────────────
+//  LIST
+// ────────────────────���───────────────────────────────────────────
+
 export const listMapSessions = async (
   portal: Portal,
   tags = portalTags
@@ -268,8 +282,6 @@ export const listMapSessions = async (
   const tagQuery = tags.split(',').map(t => `tags:"${t.trim()}"`).join(' AND ')
   const searchQuery = `${tagQuery} AND type:"Application Configuration" AND owner:${portal.user.username}`
 
-  const searchUrl = `${portalUrl}/sharing/rest/search`
-
   const form = new FormData()
   form.append('f', 'json')
   form.append('q', searchQuery)
@@ -278,28 +290,19 @@ export const listMapSessions = async (
   form.append('sortOrder', 'desc')
   form.append('token', token)
 
-  const response = await esriRequest(searchUrl, {
-    authMode: 'auto',
-    method: 'post',
-    body: form
-  })
+  const response = await esriRequest(
+    `${portalUrl}/sharing/rest/search`,
+    { authMode: 'auto', method: 'post', body: form }
+  )
 
   const results: any[] = response?.data?.results || []
-
-  return results.map((item: any) => ({
-    id: item.id,
-    label: item.title
-  }))
+  return results.map((item: any) => ({ id: item.id, label: item.title }))
 }
 
 // ────────────────────────────────────────────────────────────────
 //  LOAD
 // ────────────────────────────────────────────────────────────────
 
-/**
- * Loads a previously saved workspace session from the portal and restores
- * its map state onto the provided JimuMapView.
- */
 export const loadMapSession = async (
   portal: Portal,
   itemId: string,
@@ -307,18 +310,14 @@ export const loadMapSession = async (
 ): Promise<WorkspacePayload> => {
 
   await ensurePortalUser(portal)
-
   if (!jimuMapView?.view) throw new Error('Map view is required to load session')
 
   const { portalUrl, token } = getPortalSession()
 
-  // 1. Fetch the item's JSON data
-  const dataUrl = `${portalUrl}/sharing/rest/content/items/${itemId}/data`
-
-  const response = await esriRequest(dataUrl, {
-    authMode: 'auto',
-    query: { f: 'json', token }
-  })
+  const response = await esriRequest(
+    `${portalUrl}/sharing/rest/content/items/${itemId}/data`,
+    { authMode: 'auto', query: { f: 'json', token } }
+  )
 
   const payload: WorkspacePayload = response?.data
   if (!payload?.workspace) {
@@ -329,11 +328,9 @@ export const loadMapSession = async (
   const view = jimuMapView.view
   const map = view.map
 
-  // 2. Restore basemap — try snapshot (layer-by-layer) first,
-  //    then legacy basemapJSON, then well-known id
+  // 1. Restore basemap
   let basemapRestored = false
 
-  // Strategy A: restore from the layer-level snapshot (new format)
   if (mapSession.basemapSnapshot) {
     try {
       const restoredBasemap = restoreBasemapFromSnapshot(mapSession.basemapSnapshot)
@@ -347,7 +344,6 @@ export const loadMapSession = async (
     }
   }
 
-  // Strategy B: legacy — restore from basemapJSON (old format, backward compat)
   if (!basemapRestored && (mapSession as any).basemapJSON) {
     try {
       const restoredBasemap = Basemap.fromJSON((mapSession as any).basemapJSON)
@@ -359,7 +355,6 @@ export const loadMapSession = async (
     }
   }
 
-  // Strategy C: well-known id fallback
   if (!basemapRestored && mapSession.basemapId) {
     try {
       const wellKnown = Basemap.fromId(mapSession.basemapId)
@@ -376,7 +371,7 @@ export const loadMapSession = async (
     console.warn('Basemap could not be restored by any strategy')
   }
 
-  // 3. Restore extent / zoom
+  // 2. Restore extent / zoom
   if (mapSession.extent) {
     try {
       const extent = Extent.fromJSON(mapSession.extent)
@@ -388,14 +383,13 @@ export const loadMapSession = async (
     await view.goTo({ zoom: mapSession.zoom }, { animate: false })
   }
 
-  // 4. Restore layers — reconcile current map layers with the saved config
+  // 3. Restore layers
   if (Array.isArray(mapSession.layers)) {
     const savedLayerIds = new Set(mapSession.layers.map(cfg => cfg.id))
     const savedLayerUrls = new Set(
       mapSession.layers.filter(cfg => cfg.url).map(cfg => cfg.url)
     )
 
-    // 4a. Remove layers that are NOT in the saved session
     const layersToRemove: __esri.Layer[] = []
     map.layers.forEach(layer => {
       const matchById = savedLayerIds.has(layer.id)
@@ -405,14 +399,9 @@ export const loadMapSession = async (
       }
     })
     for (const layer of layersToRemove) {
-      try {
-        map.remove(layer)
-      } catch (e) {
-        console.warn('Could not remove layer', layer.id, e)
-      }
+      try { map.remove(layer) } catch (e) { console.warn('Could not remove layer', layer.id, e) }
     }
 
-    // 4b. Restore / add layers from the saved session
     for (const cfg of mapSession.layers) {
       await restoreLayerConfig(map, cfg)
     }
@@ -421,14 +410,38 @@ export const loadMapSession = async (
   return payload
 }
 
-/**
- * Applies a saved LayerConfig onto a layer already present in the map,
- * or creates the layer from its URL if it's missing.
- */
-const restoreLayerConfig = async (
-  map: __esri.Map,
-  cfg: LayerConfig
+// ────────────────────────────────────────────────────────────────
+//  DELETE
+// ────────────────────────────────────────────────────────────────
+
+export const deleteMapSession = async (
+  portal: Portal,
+  itemId: string
 ): Promise<void> => {
+
+  await ensurePortalUser(portal)
+
+  const { portalUrl, token } = getPortalSession()
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('token', token)
+
+  const response = await esriRequest(
+    `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${itemId}/delete`,
+    { authMode: 'auto', method: 'post', body: form }
+  )
+
+  if (!response?.data?.success) {
+    throw new Error(response?.data?.error?.message || 'Failed to delete workspace session')
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+//  HELPERS
+// ────────────────────────────────────────────────────────────────
+
+const restoreLayerConfig = async (map: __esri.Map, cfg: LayerConfig): Promise<void> => {
   let layer = map.layers.find(l => l.id === cfg.id)
 
   if (!layer && cfg.url) {
@@ -465,52 +478,10 @@ const restoreLayerConfig = async (
   }
 
   if (cfg.labelingInfo && 'labelingInfo' in layer) {
-    try {
-      ;(layer as any).labelingInfo = cfg.labelingInfo
-    } catch {
-      // ignore
-    }
+    try { ;(layer as any).labelingInfo = cfg.labelingInfo } catch { /* ignore */ }
   }
 }
 
-// ────────────────────────────────────────────────────────────────
-//  DELETE
-// ────────────────────────────────────────────────────────────────
-
-/**
- * Deletes a saved workspace session item from the portal.
- */
-export const deleteMapSession = async (
-  portal: Portal,
-  itemId: string
-): Promise<void> => {
-
-  await ensurePortalUser(portal)
-
-  const { portalUrl, token } = getPortalSession()
-
-  const deleteUrl =
-    `${portalUrl}/sharing/rest/content/users/${portal.user.username}/items/${itemId}/delete`
-
-  const form = new FormData()
-  form.append('f', 'json')
-  form.append('token', token)
-
-  const response = await esriRequest(deleteUrl, {
-    authMode: 'auto',
-    method: 'post',
-    body: form
-  })
-
-  if (!response?.data?.success) {
-    throw new Error(response?.data?.error?.message || 'Failed to delete workspace session')
-  }
-}
-
-
-/**
- * Extract per-layer state for restoring later.
- */
 const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[]> => {
   const configs: LayerConfig[] = []
 
@@ -524,22 +495,13 @@ const extractLayerConfigs = async (layers: __esri.Layer[]): Promise<LayerConfig[
         opacity: layer.opacity
       }
 
-      if ((layer as any).url) {
-        cfg.url = (layer as any).url
-      }
-
-      if ((layer as any).definitionExpression !== undefined) {
-        cfg.definitionExpression = (layer as any).definitionExpression
-      }
+      if ((layer as any).url) cfg.url = (layer as any).url
+      if ((layer as any).definitionExpression !== undefined) cfg.definitionExpression = (layer as any).definitionExpression
 
       if (Array.isArray((layer as any).labelingInfo)) {
         try {
-          cfg.labelingInfo = (layer as any).labelingInfo.map((li: any) =>
-            li?.toJSON ? li.toJSON() : li
-          )
-        } catch {
-          // ignore
-        }
+          cfg.labelingInfo = (layer as any).labelingInfo.map((li: any) => li?.toJSON ? li.toJSON() : li)
+        } catch { /* ignore */ }
       }
 
       configs.push(cfg)

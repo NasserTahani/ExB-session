@@ -6,12 +6,13 @@ import { type IMConfig } from '../config'
 import { type Workspace } from './models'
 import {
   saveMapSession,
+  updateMapSession,
   listMapSessions,
   loadMapSession,
   deleteMapSession
 } from './workspace-manager'
 import { WorkspaceList } from './components/workspace-list'
-import { WorkspaceItemEditor } from './components/workspace-item-editor'
+import { WorkspaceItemEditor, type SaveMode } from './components/workspace-item-editor'
 import './assets/style.scss'
 
 const { useState, useRef, useCallback, useEffect } = React
@@ -56,24 +57,45 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     }
   }, [])
 
-  // ── refresh the session list ──
+  // ── refresh the session list ���─
   const refreshList = useCallback(async () => {
     const list = await run(() => listMapSessions(getPortal()))
     if (list) setWorkspaces(list)
   }, [getPortal, run])
 
   // ── SAVE / UPDATE (from editor modal) ──
-  const handleEditorSave = useCallback(async (ws: Workspace) => {
+  const handleEditorSave = useCallback(async (ws: Workspace, mode: SaveMode) => {
     if (!jimuMapView) {
       setError('No map view available – please connect a Map widget')
       return
     }
-    const saved = await run(() => saveMapSession(getPortal(), ws, jimuMapView))
+
+    const isExisting = !!ws.id  // convert non-empty string to boolean
+    let saved: Workspace | undefined
+
+    if (isExisting && mode === 'save') {
+      // Overwrite the existing portal item
+      saved = await run(() => updateMapSession(getPortal(), ws, jimuMapView))
+    } else if (isExisting && mode === 'save-version') {
+      // Create a new item with a timestamped name
+      const timestamp = new Date().toLocaleString('en-NZ', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+        hour12: false
+      }).replace(/[/]/g, '-')
+      const versionedWs: Workspace = {
+        ...ws,
+        id: '',  // force new item
+        label: `${ws.label} (${timestamp})`
+      }
+      saved = await run(() => saveMapSession(getPortal(), versionedWs, jimuMapView))
+    } else {
+      // Brand new session
+      saved = await run(() => saveMapSession(getPortal(), ws, jimuMapView))
+    }
+
     if (saved) {
       setEditorData(null)
-      // Do NOT call refreshList() here — the portal search index
-      // has eventual consistency and won't return the new item yet.
-      // Instead, update the local list directly.
       setWorkspaces(prev => {
         const exists = prev.some(w => w.id === saved.id)
         if (exists) {
@@ -106,7 +128,6 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
     await run(() => deleteMapSession(getPortal(), confirmDelete.id))
-    // Optimistically remove from local list instead of refreshList()
     setWorkspaces(prev => prev.filter(w => w.id !== confirmDelete.id))
     setConfirmDelete(null)
   }, [confirmDelete, getPortal, run])

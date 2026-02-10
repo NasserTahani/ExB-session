@@ -5,18 +5,20 @@ import { useState } from 'react'
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, TextInput } from 'jimu-ui'
 import { type Workspace } from '../models'
 
+export type SaveMode = 'save' | 'save-version'
+
 export interface WorkspaceItemEditorProps {
   /** Pass an existing workspace to edit, or one with id='' for a new session. */
   data: Workspace
-  onSave: (workspace: Workspace) => void
+  onSave: (workspace: Workspace, mode: SaveMode) => void
   onClose: () => void
 }
 
 /**
- * Modal dialog used for both creating a new session and editing the label
- * of an existing one. Only the session name is editable here — the map
- * state (extent, layers, basemap) is captured automatically by the
- * workspace-manager at save time.
+ * Modal dialog used for both creating a new session and editing an existing one.
+ *
+ * New session:  shows a single "Save" button.
+ * Edit session: shows "Save" (overwrite) and "Save a Version" (new copy with timestamp).
  */
 export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
   const [label, setLabel] = useState<string>(props.data.label)
@@ -29,17 +31,17 @@ export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && label.trim()) {
-      onSaveClick()
+      handleSave('save')
     }
   }
 
-  const onSaveClick = () => {
+  const handleSave = (mode: SaveMode) => {
     if (!label.trim()) return
     const ws: Workspace = {
       ...props.data,
       label: label.trim()
     }
-    props.onSave(ws)
+    props.onSave(ws, mode)
   }
 
   return (
@@ -65,8 +67,22 @@ export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
           Cancel
         </Button>
         {' '}
-        <Button type="primary" onClick={() => onSaveClick()} disabled={!label.trim()}>
-          {isNew ? 'Save' : 'Update'}
+        {!isNew && (
+          <Button
+            type="default"
+            onClick={() => handleSave('save-version')}
+            disabled={!label.trim()}
+          >
+            Save a Version
+          </Button>
+        )}
+        {' '}
+        <Button
+          type="primary"
+          onClick={() => handleSave('save')}
+          disabled={!label.trim()}
+        >
+          Save
         </Button>
       </ModalFooter>
     </Modal>
