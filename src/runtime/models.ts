@@ -18,7 +18,7 @@ export interface LayerConfig {
 export interface MapSessionState {
   basemapId: string
   basemapJSON?: any            
-  basemapSnapshot?: any        
+  basemapSnapshot?: BasemapSnapshot        
   extent: any
   zoom?: number
   rotation?: number
@@ -26,10 +26,25 @@ export interface MapSessionState {
 }
 
 export interface WorkspacePayload {
-  workspace: boolean
-  version: string
+  valid: boolean
   created: string
   modified?: string
   mapSession: MapSessionState
   data: Workspace
+}
+
+export interface BasemapSnapshot {
+  id: string
+  title: string
+  baseLayers: BasemapLayerInfo[]
+  referenceLayers: BasemapLayerInfo[]
+}
+
+export interface BasemapLayerInfo {
+  url: string
+  type: string
+  title?: string
+  opacity?: number
+  visible?: boolean
+  styleUrl?: string
 }
