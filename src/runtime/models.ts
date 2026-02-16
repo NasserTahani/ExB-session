@@ -36,6 +36,7 @@ export interface WorkspacePayload {
 
 export interface BasemapSnapshot {
   id: string
+  portalItemId: string
   title: string
   baseLayers: BasemapLayerInfo[]
   referenceLayers: BasemapLayerInfo[]

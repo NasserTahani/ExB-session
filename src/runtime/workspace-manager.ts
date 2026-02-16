@@ -119,6 +119,7 @@ const snapshotBasemap = (basemap: Basemap): BasemapSnapshot => {
 
   return {
     id: basemap.id || '',
+    portalItemId: basemap.portalItem?.id,
     title: basemap.title || '',
     baseLayers,
     referenceLayers
@@ -130,35 +131,60 @@ const snapshotBasemap = (basemap: Basemap): BasemapSnapshot => {
  * @param snapshot The basemap snapshot to restore.
  * @returns A new Basemap instance or null if restoration fails.
  */
-const restoreBasemapFromSnapshot = (snapshot: BasemapSnapshot): Basemap | null => {
-  if (snapshot.baseLayers.length > 0) {
-    const baseLayers = snapshot.baseLayers
-      .map(deserializeBasemapLayer)
-      .filter(Boolean) as Layer[]
+const restoreBasemapFromSnapshot = async (
+  snapshot: BasemapSnapshot
+): Promise<Basemap | null> => {
 
-    const referenceLayers = snapshot.referenceLayers
-      .map(deserializeBasemapLayer)
-      .filter(Boolean) as Layer[]
-
-    if (baseLayers.length > 0) {
-      return new Basemap({
-        baseLayers,
-        referenceLayers,
-        title: snapshot.title
+  // 1. Portal Item Restore (BEST — gallery compatible)
+  if (snapshot.portalItemId) {
+    try {
+      const bm = new Basemap({
+        portalItem: { id: snapshot.portalItemId }
       })
+      await bm.load()
+      return bm
+    } catch (e) {
+      console.warn('Portal basemap restore failed', e)
     }
   }
 
-  // As a fallback, if the snapshot includes an ID, try to restore using the well-known basemap ID
+  // 2. Well Known Basemap ID
   if (snapshot.id) {
     try {
       const wellKnown = Basemap.fromId(snapshot.id)
       if (wellKnown) return wellKnown
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.warn('Basemap.fromId restore failed', e)
+    }
+  }
+
+  // 3. Snapshot Rebuild 
+  if (snapshot.baseLayers?.length > 0) {
+    try {
+      const baseLayers = snapshot.baseLayers
+        .map(deserializeBasemapLayer)
+        .filter(Boolean) as Layer[]
+
+      const referenceLayers = snapshot.referenceLayers
+        .map(deserializeBasemapLayer)
+        .filter(Boolean) as Layer[]
+
+      if (baseLayers.length > 0) {
+        return new Basemap({
+          id: snapshot.id || undefined,   
+          title: snapshot.title,
+          baseLayers,
+          referenceLayers
+        })
+      }
+    } catch (e) {
+      console.warn('Snapshot basemap rebuild failed', e)
+    }
   }
 
   return null
 }
+
 
 
 // -----------------------------------------------------------------------------
@@ -379,42 +405,43 @@ export const loadMapSession = async (
   // 1. Restore basemap
   let basemapRestored = false
 
-  // First try to restore from the snapshot, which has more information and can handle custom basemaps
-  if (mapSession.basemapSnapshot) {
+  // 1-A. restore from Portal item id 
+  if (!basemapRestored && mapSession.basemapSnapshot?.portalItemId) {
     try {
-      const restoredBasemap = restoreBasemapFromSnapshot(mapSession.basemapSnapshot)
-      if (restoredBasemap) {
-        await restoredBasemap.load()
-        map.basemap = restoredBasemap   
-        basemapRestored = true
-      }
-    } catch (e) {
-      console.warn('Could not restore basemap from snapshot', e)
-    }
-  }
-
-  // If snapshot restoration failed, try to restore from JSON
-  if (!basemapRestored && (mapSession as any).basemapJSON) {
-    try {
-      const restoredBasemap = Basemap.fromJSON((mapSession as any).basemapJSON)
-      await restoredBasemap.load()
-      map.basemap = restoredBasemap   
+      const bm = new Basemap({ portalItem: { id: mapSession.basemapSnapshot.portalItemId } })
+      await bm.load()
+      map.basemap = bm
       basemapRestored = true
-    } catch {
-      console.warn('Could not restore basemap from JSON, trying fromId…')
+    } catch (e) {
+      console.warn('Could not restore basemap from portalItemId', e)
     }
   }
 
-  // At last, try to restore using the well-known basemap ID (Esri basemaps)
+  // 1-B. restore from well-known basemap id 
   if (!basemapRestored && mapSession.basemapId) {
     try {
       const wellKnown = Basemap.fromId(mapSession.basemapId)
       if (wellKnown) {
+        await wellKnown.load().catch(() => {})
         map.basemap = wellKnown
         basemapRestored = true
       }
-    } catch {
-      console.warn('Could not restore basemap', mapSession.basemapId)
+    } catch (e) {
+      console.warn('Could not restore basemap fromId', mapSession.basemapId, e)
+    }
+  }
+
+  // 1-C. rebuild basemap from snapshot
+  if (!basemapRestored && mapSession.basemapSnapshot) {
+    try {
+      const bm = await restoreBasemapFromSnapshot(mapSession.basemapSnapshot) 
+      if (bm) {
+        await bm.load().catch(() => {})
+        map.basemap = bm
+        basemapRestored = true
+      }
+    } catch (e) {
+      console.warn('Could not restore basemap from snapshot', e)
     }
   }
 

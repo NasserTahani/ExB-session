@@ -63,7 +63,7 @@ export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
             </label>
           ) : (
             <p>
-              <b>Save</b> button to overwrite the existing session <br />
+              <b>Overwrite</b> button to overwrite the existing session <br />
               <b>Save a Copy</b> to create a versioned copy of the session
             </p>
           )
