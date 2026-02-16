@@ -49,40 +49,45 @@ export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
       <ModalHeader>{isNew ? 'Save Current Session' : 'Edit Session'}</ModalHeader>
       <ModalBody>
         <div>
-          <label className="w-75">Name
-            <TextInput
-              className="w-100"
-              value={label}
-              onChange={onTextChange}
-              onKeyDown={onKeyDown}
-              type="text"
-              size="lg"
-              placeholder="Enter session name…"
-            />
-          </label>
+          {isNew ? (
+            <label className="w-75">Name
+              <TextInput
+                className="w-100"
+                value={label}
+                onChange={onTextChange}
+                onKeyDown={onKeyDown}
+                type="text"
+                size="lg"
+                placeholder="Enter session name…"
+              />
+            </label>
+          ) : (
+            <p>
+              <b>Save</b> button to overwrite the existing session <br />
+              <b>Save a Copy</b> to create a versioned copy of the session
+            </p>
+          )
+          }
         </div>
       </ModalBody>
       <ModalFooter>
         <Button onClick={() => props.onClose()}>
           Cancel
         </Button>
-        {' '}
         {!isNew && (
           <Button
             type="default"
             onClick={() => handleSave('save-version')}
-            disabled={!label.trim()}
           >
-            Save a Version
+            Save a Copy
           </Button>
         )}
-        {' '}
         <Button
           type="primary"
           onClick={() => handleSave('save')}
           disabled={!label.trim()}
         >
-          Save
+          {isNew ? 'Save' : 'Overwrite'}
         </Button>
       </ModalFooter>
     </Modal>

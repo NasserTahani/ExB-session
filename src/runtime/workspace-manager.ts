@@ -12,6 +12,7 @@ import TileLayer from 'esri/layers/TileLayer'
 import VectorTileLayer from 'esri/layers/VectorTileLayer'
 import WebTileLayer from 'esri/layers/WebTileLayer'
 import Extent from 'esri/geometry/Extent'
+import { fromJSON } from 'esri/renderers/support/jsonUtils'
 
 
 const portalTags = 'ExB-session,workspace,map-config'
@@ -356,7 +357,14 @@ export const loadMapSession = async (
   // Use the "data" endpoint to retrieve the item data
   const response = await esriRequest(
     `${portalUrl}/sharing/rest/content/items/${itemId}/data`,
-    { authMode: 'auto', query: { f: 'json', token } }
+    { 
+      authMode: 'auto', 
+      query: { 
+        f: 'json', 
+        token,
+        _ts: Date.now() // prevent caching
+      }
+    }
   )
 
   const payload: WorkspacePayload = response?.data
@@ -532,6 +540,7 @@ const restoreLayerConfig = async (map: Map, cfg: LayerConfig): Promise<void> => 
     return
   }
 
+  (layer as any).renderer = fromJSON(cfg.renderer) || (layer as any).renderer
   layer.visible = cfg.visible
   layer.opacity = cfg.opacity
 
@@ -563,11 +572,16 @@ const extractLayerConfigs = async (layers: Layer[]): Promise<LayerConfig[]> => {
         type: layer.type,
         title: layer.title,
         visible: layer.visible,
-        opacity: layer.opacity
+        opacity: layer.opacity,
+        renderer: (layer as any).renderer ? (layer as any).renderer.toJSON() : undefined
       }
 
-      if ((layer as any).url) cfg.url = (layer as any).url
-      if ((layer as any).definitionExpression !== undefined) cfg.definitionExpression = (layer as any).definitionExpression
+      if ((layer as any).url){
+        cfg.url = (layer as any).url
+      } 
+      if ((layer as any).definitionExpression !== undefined){
+        cfg.definitionExpression = (layer as any).definitionExpression
+      } 
 
       if (Array.isArray((layer as any).labelingInfo)) {
         try {

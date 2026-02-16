@@ -11,6 +11,7 @@ export interface LayerConfig {
   url?: string
   visible: boolean
   opacity: number
+  renderer: any
   definitionExpression?: string
   labelingInfo?: any[]
 }
