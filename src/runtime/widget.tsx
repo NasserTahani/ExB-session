@@ -20,20 +20,22 @@ const { useState, useRef, useCallback, useEffect } = React
 export default function Widget (props: AllWidgetProps<IMConfig>) {
   const { useMapWidgetIds } = props
 
-  // ── state ──
+  // State variables
   const [jimuMapView, setJimuMapView] = useState<JimuMapView | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Editor modal state: null = closed, Workspace object = open
+  // Editor state: null = closed, Workspace object = open with that data
   const [editorData, setEditorData] = useState<Workspace | null>(null)
-  // Delete confirmation state: null = none pending
   const [confirmDelete, setConfirmDelete] = useState<Workspace | null>(null)
 
   const portalRef = useRef<Portal | null>(null)
 
-  // ── portal helper ──
+  /**
+   * Utility to get or create the Portal instance. 
+   * @returns Portal instance
+   */
   const getPortal = useCallback((): Portal => {
     if (!portalRef.current) {
       const portalUrl = getAppStore().getState().portalUrl
@@ -42,7 +44,11 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     return portalRef.current
   }, [])
 
-  // ── wrap async actions with loading / error handling ──
+  /**
+   * Utility to run an async function with loading and error handling. 
+   * @param fn Async function to run
+   * @returns Result of the function or undefined on error
+   */
   const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
     setLoading(true)
     setError(null)
@@ -57,13 +63,33 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     }
   }, [])
 
-  // ── refresh the session list ���─
+
+  /**
+   * Generate a timestamp string for versioning saved sessions. Format: "dd-MM-yyyy HH:mm".
+   * @returns Formatted timestamp string
+   */
+  const getTimestamp = () => new Date().toLocaleString('en-NZ', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+        hour12: false
+      }).replace(/[/]/g, '-')
+
+  /**
+   * Fetch the list of saved sessions from the portal and update state.
+   * @returns Promise that resolves when the list is refreshed
+   */
   const refreshList = useCallback(async () => {
     const list = await run(() => listMapSessions(getPortal()))
-    if (list) setWorkspaces(list)
+    if (list) {
+      setWorkspaces(list)
+    }
   }, [getPortal, run])
 
-  // ── SAVE / UPDATE (from editor modal) ──
+  /**
+   * Handle saving a session from the editor. Depending on the mode, this may create a new session or update an existing one.
+   * @param ws Workspace data from the editor
+   * @param mode Save mode ('save' to overwrite, 'save-version' to save a copy)
+   */
   const handleEditorSave = useCallback(async (ws: Workspace, mode: SaveMode) => {
     if (!jimuMapView) {
       setError('No map view available – please connect a Map widget')
@@ -76,17 +102,13 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     if (isExisting && mode === 'save') {
       // Overwrite the existing portal item
       saved = await run(() => updateMapSession(getPortal(), ws, jimuMapView))
+
     } else if (isExisting && mode === 'save-version') {
       // Create a new item with a timestamped name
-      const timestamp = new Date().toLocaleString('en-NZ', {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit',
-        hour12: false
-      }).replace(/[/]/g, '-')
       const versionedWs: Workspace = {
         ...ws,
         id: '',  // force new item
-        label: `${ws.label} (${timestamp})`
+        label: `${ws.label} (${getTimestamp()})`
       }
       saved = await run(() => saveMapSession(getPortal(), versionedWs, jimuMapView))
     } else {
@@ -106,7 +128,10 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     }
   }, [jimuMapView, getPortal, run])
 
-  // ── LOAD (click on a row) ──
+  /**
+   * Handle opening a session when the user clicks the open button.
+   * @param ws Workspace to open
+   */
   const handleWorkspaceOpen = useCallback(async (ws: Workspace) => {
     if (!jimuMapView) {
       setError('No map view available – please connect a Map widget')
@@ -115,16 +140,25 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     await run(() => loadMapSession(getPortal(), ws.id, jimuMapView))
   }, [jimuMapView, getPortal, run])
 
-  // ── EDIT (pencil icon → open modal with existing data) ──
+  /**
+   * Handle editing a session when the user clicks the edit button.
+   * @param ws Workspace to edit
+   */
   const handleWorkspaceEdit = useCallback((ws: Workspace) => {
     setEditorData(ws)
   }, [])
 
-  // ── DELETE (trash icon → confirm → delete) ──
+  /**
+   * Handle deleting a session when the user clicks the delete button.
+   * @param ws Workspace to delete
+   */
   const handleWorkspaceDelete = useCallback((ws: Workspace) => {
     setConfirmDelete(ws)
   }, [])
 
+  /**
+   * Confirm and execute the deletion of a workspace.
+   */
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
     await run(() => deleteMapSession(getPortal(), confirmDelete.id))
@@ -132,7 +166,10 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     setConfirmDelete(null)
   }, [confirmDelete, getPortal, run])
 
-  // ── map view ready → fetch list ──
+  /**
+   * Handle changes to the active map view. 
+   * @param jmv The active JimuMapView instance
+   */
   const onActiveViewChange = useCallback((jmv: JimuMapView) => {
     setJimuMapView(jmv)
   }, [])
@@ -143,9 +180,6 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     }
   }, [jimuMapView, refreshList])
 
-  // ────────────────────────────────────────────────────────────────
-  //  Render
-  // ────────────────────────────────────────────────────────────────
 
   return (
     <div className="widget-save-sessions jimu-widget">
@@ -161,7 +195,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
       {/* Loading overlay */}
       {loading && <div className="workspace-loading-mask" />}
 
-      {/* ── Error banner ── */}
+      {/* Error banner */}
       {error && (
         <div className="error-banner">
           <span>{error}</span>
@@ -169,7 +203,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         </div>
       )}
 
-      {/* ── "New Session" button ── */}
+      {/* "New Session" button */}
       <div className="save-section workspaces-content-center">
         <button
           className="jimu-btn jimu-btn-primary"
@@ -187,7 +221,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         </button>
       </div>
 
-      {/* ── Session list (child component) ── */}
+      {/* Session list */}
       <WorkspaceList
         data={workspaces}
         onWorkspaceOpen={handleWorkspaceOpen}
@@ -195,7 +229,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         onWorkspaceDelete={handleWorkspaceDelete}
       />
 
-      {/* ── Editor modal (child component) ── */}
+      {/* Editor modal */}
       {editorData && (
         <WorkspaceItemEditor
           data={editorData}
@@ -204,7 +238,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         />
       )}
 
-      {/* ── Delete confirmation modal ── */}
+      {/* Delete confirmation modal */}
       {confirmDelete && (
         <div className="delete-confirm-overlay">
           <div className="delete-confirm-dialog">
@@ -227,7 +261,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         </div>
       )}
 
-      {/* ── Footer ── */}
+      {/* Footer */}
       <div className="info-footer workspaces-content-center">
         {workspaces.length > 0 && <span>{workspaces.length} session(s)</span>}
       </div>
