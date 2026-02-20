@@ -485,7 +485,10 @@ export const loadMapSession = async (
 
     // Add or update layers from the saved session
     for (const cfg of mapSession.layers) {
-      await restoreLayerConfig(map, cfg)
+      const layer = await restoreLayerConfig(map, cfg)
+      if (layer) {
+        map.reorder(layer, cfg.order)  // ensure the layer is in the correct order
+      }
     }
   }
 
@@ -532,9 +535,9 @@ export const deleteMapSession = async (
  * Restores a layer configuration to the map.
  * @param map The map instance.
  * @param cfg The layer configuration to restore.
- * @returns A promise that resolves when the layer is restored.
+ * @returns A promise that resolves to the restored layer or null if restoration failed.
  */
-const restoreLayerConfig = async (map: Map, cfg: LayerConfig): Promise<void> => {
+const restoreLayerConfig = async (map: Map, cfg: LayerConfig): Promise<Layer | null> => {
 
   // try to find an existing layer with the same ID
   let layer = map.layers.find(l => l.id === cfg.id)  
@@ -558,13 +561,13 @@ const restoreLayerConfig = async (map: Map, cfg: LayerConfig): Promise<void> => 
       }
     } catch (e) {
       console.warn('Could not recreate layer', cfg.id, e)
-      return
+      return null
     }
   }
 
   if (!layer) {
     console.warn('Layer not found and could not be recreated', cfg.id)
-    return
+    return null
   }
 
   (layer as any).renderer = fromJSON(cfg.renderer) || (layer as any).renderer
@@ -582,6 +585,8 @@ const restoreLayerConfig = async (map: Map, cfg: LayerConfig): Promise<void> => 
       /* ignore */ 
     }
   }
+
+  return layer
 }
 
 /**
@@ -592,7 +597,7 @@ const restoreLayerConfig = async (map: Map, cfg: LayerConfig): Promise<void> => 
 const extractLayerConfigs = async (layers: Layer[]): Promise<LayerConfig[]> => {
   const configs: LayerConfig[] = []
 
-  for (const layer of layers) {
+  for (const [idx, layer] of layers.entries()) {
     try {
       const cfg: LayerConfig = {
         id: layer.id,
@@ -600,7 +605,8 @@ const extractLayerConfigs = async (layers: Layer[]): Promise<LayerConfig[]> => {
         title: layer.title,
         visible: layer.visible,
         opacity: layer.opacity,
-        renderer: (layer as any).renderer ? (layer as any).renderer.toJSON() : undefined
+        renderer: (layer as any).renderer ? (layer as any).renderer.toJSON() : undefined,
+        order: idx
       }
 
       if ((layer as any).url){

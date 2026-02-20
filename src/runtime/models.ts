@@ -14,6 +14,7 @@ export interface LayerConfig {
   renderer: any
   definitionExpression?: string
   labelingInfo?: any[]
+  order: number
 }
 
 export interface MapSessionState {
