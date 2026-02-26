@@ -72,6 +72,11 @@ const view = {
 
 const jimuMapView = { view };
 
+beforeEach(() => {
+  jest.clearAllMocks();
+  portal.load.mockResolvedValue(portal);
+});
+
 // ----------------------------------------------------------------
 // LIST MAP SESSION TESTS
 // ----------------------------------------------------------------
@@ -130,6 +135,12 @@ test('save a session by creating a portal item', async () => {
     expect(result.id).toBe('abc123')
 })
 
+test('saveMapSession throws when map view is missing', async () => {
+  await expect(
+    saveMapSession(portal, { id: '', label: 'Workspace A' }, {} as any)
+  ).rejects.toThrow('Map view is required to save session');
+});
+
 
 /**
  * Tests that saveMapSession throws an error when the portal save operation fails 
@@ -169,6 +180,70 @@ test('loads session and restores map', async () => {
   await expect(
     loadMapSession(portal, 'itemId', jimuMapView as any)
   ).resolves.toHaveProperty('valid', true);
+});
+
+test('loadMapSession uses zoom fallback when extent is missing', async () => {
+  (esriRequest as jest.Mock<any>).mockResolvedValue({
+    data: {
+      valid: true,
+      mapSession: {
+        basemapId: undefined,
+        basemapSnapshot: undefined,
+        extent: undefined,
+        zoom: 9,
+        layers: []
+      }
+    }
+  });
+
+  await loadMapSession(portal, 'itemId', jimuMapView as any);
+  expect(view.goTo).toHaveBeenCalledWith({ zoom: 9 }, { animate: false });
+});
+
+test('loadMapSession removes map layers not present in the saved session', async () => {
+  const keepLayer = { id: 'keep', url: 'https://service/keep' } as any;
+  const removeLayer = { id: 'remove', url: 'https://service/remove' } as any;
+  const remove = jest.fn();
+  const reorder = jest.fn();
+  const localMap = {
+    ...map,
+    layers: {
+      toArray: () => [keepLayer, removeLayer],
+      find: (predicate: any) => [keepLayer, removeLayer].find(predicate),
+      forEach: (cb: any) => [keepLayer, removeLayer].forEach(cb)
+    },
+    remove,
+    reorder
+  };
+  const localView = { ...view, map: localMap };
+
+  (esriRequest as jest.Mock<any>).mockResolvedValue({
+    data: {
+      valid: true,
+      mapSession: {
+        basemapId: undefined,
+        basemapSnapshot: undefined,
+        extent: undefined,
+        zoom: 4,
+        layers: [
+          {
+            id: 'keep',
+            url: 'https://service/keep',
+            type: 'feature',
+            visible: true,
+            opacity: 1,
+            renderer: {},
+            order: 0
+          }
+        ]
+      }
+    }
+  });
+
+  await loadMapSession(portal, 'itemId', { view: localView } as any);
+  expect(remove).toHaveBeenCalledWith(removeLayer);
+  expect(remove).not.toHaveBeenCalledWith(keepLayer);
+  expect(reorder).toHaveBeenCalledWith(keepLayer, 0);
 });
 
 /**
@@ -230,6 +305,12 @@ it('updates a session by updating a portal item', async () => {
     );
     expect(esriRequest).toHaveBeenCalled()
     expect(result.id).toBe('abc123')
+});
+
+it('updateMapSession throws when map view is missing', async () => {
+  await expect(
+    updateMapSession(portal, { id: 'abc123', label: 'Workspace A' }, {} as any)
+  ).rejects.toThrow('Map view is required to save session');
 });
 
 /**

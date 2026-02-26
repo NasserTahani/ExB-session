@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="15" failures="0" errors="0" time="10.087">
+  <testsuite name="undefined" errors="0" failures="0" skipped="0" timestamp="2026-02-25T23:26:25" time="8.251" tests="15">
+    <testcase classname=" lists sessions and maps results" name=" lists sessions and maps results" time="0.004">
+    </testcase>
+    <testcase classname=" lists sessions returns empty array if no results" name=" lists sessions returns empty array if no results" time="0.001">
+    </testcase>
+    <testcase classname=" save a session by creating a portal item" name=" save a session by creating a portal item" time="0.002">
+    </testcase>
+    <testcase classname=" saveMapSession throws when map view is missing" name=" saveMapSession throws when map view is missing" time="0.013">
+    </testcase>
+    <testcase classname=" throws when portal save fails" name=" throws when portal save fails" time="0">
+    </testcase>
+    <testcase classname=" loads session and restores map" name=" loads session and restores map" time="0.001">
+    </testcase>
+    <testcase classname=" loadMapSession uses zoom fallback when extent is missing" name=" loadMapSession uses zoom fallback when extent is missing" time="0">
+    </testcase>
+    <testcase classname=" loadMapSession removes map layers not present in the saved session" name=" loadMapSession removes map layers not present in the saved session" time="0.001">
+    </testcase>
+    <testcase classname=" throws if loaded session is invalid" name=" throws if loaded session is invalid" time="0.001">
+    </testcase>
+    <testcase classname=" delete session succeeds" name=" delete session succeeds" time="0.001">
+    </testcase>
+    <testcase classname=" delete session throws on failure" name=" delete session throws on failure" time="0.001">
+    </testcase>
+    <testcase classname=" throws when updateMapSession called without id" name=" throws when updateMapSession called without id" time="0">
+    </testcase>
+    <testcase classname=" updates a session by updating a portal item" name=" updates a session by updating a portal item" time="0.001">
+    </testcase>
+    <testcase classname=" updateMapSession throws when map view is missing" name=" updateMapSession throws when map view is missing" time="0">
+    </testcase>
+    <testcase classname=" throws when updateMapSession fails" name=" throws when updateMapSession fails" time="0">
+    </testcase>
+  </testsuite>
+</testsuites>

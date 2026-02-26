@@ -161,10 +161,19 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
    */
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
-    await run(() => deleteMapSession(getPortal(), confirmDelete.id))
-    setWorkspaces(prev => prev.filter(w => w.id !== confirmDelete.id))
-    setConfirmDelete(null)
-  }, [confirmDelete, getPortal, run])
+    setLoading(true)
+    setError(null)
+    try {
+      await deleteMapSession(getPortal(), confirmDelete.id)
+      setWorkspaces(prev => prev.filter(w => w.id !== confirmDelete.id))
+      setConfirmDelete(null)
+    } catch (e: any) {
+      console.error(e)
+      setError(e?.message || 'An unexpected error occurred')
+    } finally {
+      setLoading(false)
+    }
+  }, [confirmDelete, getPortal])
 
   /**
    * Handle changes to the active map view. 
