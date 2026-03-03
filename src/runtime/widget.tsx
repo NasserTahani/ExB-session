@@ -79,12 +79,16 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
 
   /**
    * Fetch the list of saved sessions from the portal and update state.
+   * @param requiredWorkspace Optional workspace to use if it is missing from search
    * @returns Promise that resolves when the list is refreshed
    */
-  const refreshList = useCallback(async () => {
+  const refreshList = useCallback(async (requiredWorkspace?: Workspace) => {
     const list = await run(() => listMapSessions(getPortal()))
     if (list) {
-      setWorkspaces(list)
+      const nextList = requiredWorkspace && !list.some(w => w.id === requiredWorkspace.id)
+        ? [requiredWorkspace, ...list]
+        : list
+      setWorkspaces(nextList)
     }
   }, [getPortal, run])
 
@@ -140,8 +144,11 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
       setError('No map view available – please connect a Map widget')
       return
     }
-    await run(() => loadMapSession(getPortal(), ws.id, jimuMapView))
-  }, [jimuMapView, getPortal, run])
+    const loaded = await run(() => loadMapSession(getPortal(), ws.id, jimuMapView))
+    if (loaded) {
+      await refreshList(ws)
+    }
+  }, [jimuMapView, getPortal, refreshList, run])
 
   /**
    * Handle editing a session when the user clicks the edit button.
@@ -160,8 +167,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   }, [])
 
   /**
-   * Import a shared session into the current user's content, then refresh the list
-   * and load the imported session into the active map view.
+   * Import a shared session into the current user's content, then load it and refresh the list.
    * @param sourceItemId Shared portal item id to import
    */
   const handleImportSave = useCallback(async (sourceItemId: string) => {
@@ -176,8 +182,12 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     }
 
     setImportOpen(false)
-    await refreshList()
-    await run(() => loadMapSession(getPortal(), imported.id, jimuMapView))
+    setWorkspaces(prev => prev.some(w => w.id === imported.id) ? prev : [imported, ...prev])
+
+    const loaded = await run(() => loadMapSession(getPortal(), imported.id, jimuMapView))
+    if (loaded) {
+      await refreshList(imported)
+    }
   }, [jimuMapView, getPortal, refreshList, run])
 
   /**
@@ -257,7 +267,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         <button
           className="jimu-btn"
           disabled={loading}
-          onClick={refreshList}
+          onClick={() => { void refreshList() }}
         >
           Refresh
         </button>
