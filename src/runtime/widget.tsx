@@ -7,12 +7,14 @@ import { type Workspace } from './models'
 import {
   saveMapSession,
   updateMapSession,
+  importMapSession,
   listMapSessions,
   loadMapSession,
   deleteMapSession
 } from './workspace-manager'
 import { WorkspaceList } from './components/workspace-list'
 import { WorkspaceItemEditor, type SaveMode } from './components/workspace-item-editor'
+import { WorkspaceItemShare } from './components/workspace-item-share'
 import './assets/style.scss'
 
 const { useState, useRef, useCallback, useEffect } = React
@@ -28,6 +30,7 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
 
   // Editor state: null = closed, Workspace object = open with that data
   const [editorData, setEditorData] = useState<Workspace | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Workspace | null>(null)
 
   const portalRef = useRef<Portal | null>(null)
@@ -157,6 +160,27 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   }, [])
 
   /**
+   * Import a shared session into the current user's content, then refresh the list
+   * and load the imported session into the active map view.
+   * @param sourceItemId Shared portal item id to import
+   */
+  const handleImportSave = useCallback(async (sourceItemId: string) => {
+    if (!jimuMapView) {
+      setError('No map view available')
+      return
+    }
+
+    const imported = await run(() => importMapSession(getPortal(), sourceItemId))
+    if (!imported) {
+      return
+    }
+
+    setImportOpen(false)
+    await refreshList()
+    await run(() => loadMapSession(getPortal(), imported.id, jimuMapView))
+  }, [jimuMapView, getPortal, refreshList, run])
+
+  /**
    * Confirm and execute the deletion of a workspace.
    */
   const confirmDeleteAction = useCallback(async () => {
@@ -221,6 +245,15 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         >
           Save Current Session
         </button>
+
+        <button
+          className="jimu-btn"
+          disabled={loading}
+          onClick={() => setImportOpen(true)}
+        >
+          Import a Session
+        </button>
+
         <button
           className="jimu-btn"
           disabled={loading}
@@ -244,6 +277,14 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
           data={editorData}
           onSave={handleEditorSave}
           onClose={() => setEditorData(null)}
+        />
+      )}
+
+      {/* Import modal */}
+      {importOpen && (
+        <WorkspaceItemShare
+          onSave={handleImportSave}
+          onClose={() => setImportOpen(false)}
         />
       )}
 

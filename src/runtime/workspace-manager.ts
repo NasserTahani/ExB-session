@@ -275,6 +275,102 @@ export const saveMapSession = async (
 }
 
 // -------------------------------------------------------------------------------------
+//  IMPORT A SESSION
+// -------------------------------------------------------------------------------------
+
+/**
+ * Imports a shared workspace session by portal item id, cloning it into the user's content as a new item.
+ * @param portal The portal instance.
+ * @param itemId The shared source session item id.
+ * @returns A promise that resolves to the imported workspace.
+ */
+export const importMapSession = async (
+  portal: Portal,
+  itemId: string
+): Promise<Workspace> => {
+  await ensurePortalUser(portal)
+
+  const trimmedItemId = itemId.trim()
+  if (!trimmedItemId) {
+    throw new Error('Portal item id is required')
+  }
+
+  const { portalUrl, token } = getPortalSession()
+
+  const itemResponse = await esriRequest(
+    `${portalUrl}/sharing/rest/content/items/${trimmedItemId}`,
+    {
+      authMode: 'auto',
+      query: {
+        f: 'json',
+        token,
+        _ts: Date.now()
+      }
+    }
+  )
+
+  const sourceItem = itemResponse?.data
+  if (!sourceItem?.id) {
+    throw new Error('Session item was not found')
+  }
+
+  if (sourceItem.type !== portalItemType) {
+    throw new Error(`Item ${trimmedItemId} is not a ${portalItemType}`)
+  }
+
+  const dataResponse = await esriRequest(
+    `${portalUrl}/sharing/rest/content/items/${trimmedItemId}/data`,
+    {
+      authMode: 'auto',
+      query: {
+        f: 'json',
+        token,
+        _ts: Date.now()
+      }
+    }
+  )
+
+  const payload: WorkspacePayload = dataResponse?.data
+  if (!payload?.valid) {
+    throw new Error('Item is not a valid workspace session')
+  }
+
+  const title = payload.data?.label
+  const importedPayload: WorkspacePayload = {
+    ...payload,
+    created: new Date().toISOString(),
+    modified: new Date().toISOString(),
+    data: {
+      ...(payload.data || { id: '', label: title }),
+      id: '',
+      label: title
+    }
+  }
+
+  const form = new FormData()
+  form.append('f', 'json')
+  form.append('title', title)
+  form.append('type', portalItemType)
+  form.append('token', token)
+  form.append('tags', portalTags)
+  form.append('text', JSON.stringify(importedPayload))
+
+  const response = await esriRequest(
+    `${portalUrl}/sharing/rest/content/users/${portal.user.username}/addItem`,
+    { authMode: 'auto', method: 'post', body: form }
+  )
+
+  if (!response?.data?.success) {
+    throw new Error(response?.data?.error?.message || 'Failed to import workspace session')
+  }
+
+  return {
+    id: response.data.id,
+    label: title
+  }
+}
+
+// -------------------------------------------------------------------------------------
 //  UPDATE A SESSION
 // -------------------------------------------------------------------------------------
 
