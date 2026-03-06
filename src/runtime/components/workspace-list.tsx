@@ -3,8 +3,11 @@
 import { jsx } from 'jimu-core'
 import { Icon } from 'jimu-ui'
 import { type Workspace } from '../models'
-import DeleteIcon from '../assets/icons/delete.svg'
-import EditIcon from '../assets/icons/edit.svg'
+// import DeleteIcon from '../assets/icons/delete.svg'
+// import EditIcon from '../assets/icons/edit.svg'
+import EditIcon from "jimu-icons/svg/outlined/editor/edit.svg"
+import DeleteIcon from "jimu-icons/svg/outlined/editor/trash.svg"
+import EmptyIcon from "jimu-icons/svg/outlined/data/column.svg"
 
 export interface WorkspaceListProps {
   data: Workspace[]
@@ -36,32 +39,37 @@ export const WorkspaceList = function (props: WorkspaceListProps) {
   }
 
   return (
-    <div className="save-sessions-list">
+    <div className="session-list">
       {props.data.length === 0 && (
-        <p className="info-text workspaces-content-center">No sessions saved yet</p>
+        <div className="no-content">
+          <Icon className="no-content-icon" icon={EmptyIcon} size={40}/>
+          
+          <p>No saved sessions</p>
+          <p>Click <b>+</b> to save your current workspace</p>
+        </div>
       )}
 
       {props.data.map((workspace: Workspace) => (
         <div
-          className="save-sessions-item"
+          className="session-item"
           key={workspace.id}
           onClick={(ev) => { onOpenClick(ev, workspace) }}
         >
-          <div className="workspace-list-label p-2">
+          <div className="session-item-label">
             {workspace.label}
           </div>
-          <div className="workspace-list-icon-wrappers">
+          <div className="session-item-icon-wrappers">
             <div
-              className="workspace-list-icon-wrapper workspace-list-icon-wrapper-clickable"
+              className="session-item-icon-wrapper session-item-icon-wrapper-clickable"
               onClick={(ev) => { onEditClick(ev, workspace) }}
             >
-              <Icon className="workspace-list-icon" title="Edit Session" icon={EditIcon} />
+              <Icon className="session-item-icon" title="Edit Session" icon={EditIcon} size={20}/>
             </div>
             <div
-              className="workspace-list-icon-wrapper workspace-list-icon-wrapper-clickable"
+              className="session-item-icon-wrapper session-item-icon-wrapper-clickable"
               onClick={(ev) => { onDeleteClick(ev, workspace) }}
             >
-              <Icon className="workspace-list-icon" title="Delete Session" icon={DeleteIcon} />
+              <Icon className="session-item-icon" title="Delete Session" icon={DeleteIcon} size={20}/>
             </div>
           </div>
         </div>

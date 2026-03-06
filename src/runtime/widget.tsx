@@ -15,18 +15,24 @@ import {
 import { WorkspaceList } from './components/workspace-list'
 import { WorkspaceItemEditor, type SaveMode } from './components/workspace-item-editor'
 import { WorkspaceItemShare } from './components/workspace-item-share'
+import { WorkspaceDeleteConfirm } from './components/workspace-delete-confirm'
 import './assets/style.scss'
+import { Icon, Notification } from 'jimu-ui'
+import RefrshIcon from 'jimu-icons/svg/outlined/editor/refresh.svg'
+import SaveIcon from 'jimu-icons/svg/outlined/editor/plus.svg'
+import ImportIcon from 'jimu-icons/svg/outlined/editor/import.svg'
 
 const { useState, useRef, useCallback, useEffect } = React
+type NoticeSeverity = 'error' | 'success' | 'info'
 
-export default function Widget (props: AllWidgetProps<IMConfig>) {
+export default function Widget(props: AllWidgetProps<IMConfig>) {
   const { useMapWidgetIds } = props
 
   // State variables
   const [jimuMapView, setJimuMapView] = useState<JimuMapView | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ id: number, message: string, severity: NoticeSeverity } | null>(null)
 
   // Editor state: null = closed, Workspace object = open with that data
   const [editorData, setEditorData] = useState<Workspace | null>(null)
@@ -34,6 +40,33 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   const [confirmDelete, setConfirmDelete] = useState<Workspace | null>(null)
 
   const portalRef = useRef<Portal | null>(null)
+  const noticeIdRef = useRef(0) // Incremental ID for notices to ensure unique keys
+
+  /**
+   * Utility to show a status message with a specific severity. messages disappear after 5 seconds.
+   * @param message The message text to display
+   * @param severity The severity level 
+   */
+  const showNotice = useCallback((message: string, severity: NoticeSeverity = 'info') => {
+    noticeIdRef.current += 1
+    setNotice({
+      id: noticeIdRef.current,
+      message,
+      severity
+    })
+  }, [])
+
+  /**
+   * Utility to set an error message. This is a wrapper around showNotice with 'error' severity.
+   * @param message The error message text to display
+   */
+  const setError = useCallback((message: string | null) => {
+    if (!message) {
+      setNotice(null)
+      return
+    }
+    showNotice(message, 'error')
+  }, [showNotice])
 
   /**
    * Utility to get or create the Portal instance. 
@@ -54,17 +87,17 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
    */
   const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
     setLoading(true)
-    setError(null)
+    setNotice(null)
     try {
       return await fn()
     } catch (e: any) {
       console.error(e)
-      setError(e?.message || 'An unexpected error occurred')
+      showNotice(e?.message || 'An unexpected error occurred', 'error')
       return undefined
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showNotice])
 
 
   /**
@@ -72,10 +105,10 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
    * @returns Formatted timestamp string
    */
   const getTimestamp = () => new Date().toLocaleString('en-NZ', {
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit',
-        hour12: false
-      }).replace(/[/]/g, '-')
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false
+  }).replace(/[/]/g, '-')
 
   /**
    * Fetch the list of saved sessions from the portal and update state.
@@ -132,8 +165,14 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
         }
         return [saved, ...prev]
       })
+      const successMessage = isExisting && mode === 'save'
+        ? `Session ${ws.label} updated successfully`
+        : isExisting && mode === 'save-version'
+          ? `Session ${ws.label} duplicated successfully`
+          : 'Current session saved'
+      showNotice(successMessage, 'success')
     }
-  }, [jimuMapView, getPortal, run])
+  }, [jimuMapView, getPortal, run, showNotice])
 
   /**
    * Handle opening a session when the user clicks the open button.
@@ -147,8 +186,9 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     const loaded = await run(() => loadMapSession(getPortal(), ws.id, jimuMapView))
     if (loaded) {
       await refreshList(ws)
+      showNotice(`Session ${ws.label} loaded successfully`, 'success')
     }
-  }, [jimuMapView, getPortal, refreshList, run])
+  }, [jimuMapView, getPortal, refreshList, run, showNotice])
 
   /**
    * Handle editing a session when the user clicks the edit button.
@@ -187,8 +227,9 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
     const loaded = await run(() => loadMapSession(getPortal(), imported.id, jimuMapView))
     if (loaded) {
       await refreshList(imported)
+      showNotice(`Session ${imported.label} imported successfully`, 'success')
     }
-  }, [jimuMapView, getPortal, refreshList, run])
+  }, [jimuMapView, getPortal, refreshList, run, showNotice])
 
   /**
    * Confirm and execute the deletion of a workspace.
@@ -196,18 +237,19 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
   const confirmDeleteAction = useCallback(async () => {
     if (!confirmDelete) return
     setLoading(true)
-    setError(null)
+    setNotice(null)
     try {
       await deleteMapSession(getPortal(), confirmDelete.id)
       setWorkspaces(prev => prev.filter(w => w.id !== confirmDelete.id))
       setConfirmDelete(null)
+      showNotice(`Session ${confirmDelete.label} deleted successfully`, 'success')
     } catch (e: any) {
       console.error(e)
       setError(e?.message || 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }
-  }, [confirmDelete, getPortal])
+  }, [confirmDelete, getPortal, showNotice])
 
   /**
    * Handle changes to the active map view. 
@@ -236,41 +278,48 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
       )}
 
       {/* Loading overlay */}
-      {loading && <div className="workspace-loading-mask" />}
+      {loading && <div className="session-loading-mask" />}
 
-      {/* Error banner */}
-      {error && (
-        <div className="error-banner">
-          <span>{error}</span>
-          <button className="dismiss-btn" onClick={() => setError(null)}>✕</button>
-        </div>
+      {/* status messages */}
+      {notice && (
+        <Notification
+          key={notice.id.toString()}
+          open={true}
+          message={notice.message}
+          severity={notice.severity}
+          closable
+          autoHideDuration={5000}
+          onClose={() => setNotice(null)}
+        />
       )}
 
-      {/* "New Session" button */}
-      <div className="save-section workspaces-content-center">
-        <button
-          className="jimu-btn jimu-btn-primary"
-          disabled={loading}
-          onClick={() => setEditorData({ id: '', label: '' })}
-        >
-          Save Current Session
-        </button>
+      <div className="session-header">
+        <h5 className="session-header-title">
+          Sessions
+        </h5>
 
-        <button
-          className="jimu-btn"
-          disabled={loading}
-          onClick={() => setImportOpen(true)}
-        >
-          Import a Session
-        </button>
+        <div className="session-header-container">
+          <div
+            className="session-header-btn-container"
+            onClick={() => setEditorData({ id: '', label: '' })}
+          >
+            <Icon className="menu-button" title="Save Session" icon={SaveIcon} size={16} />
+          </div>
 
-        <button
-          className="jimu-btn"
-          disabled={loading}
-          onClick={() => { void refreshList() }}
-        >
-          Refresh
-        </button>
+          <div
+            className="session-header-btn-container"
+            onClick={() => setImportOpen(true)}
+          >
+            <Icon className="menu-button" title="Import Session" icon={ImportIcon} size={18} />
+          </div>
+
+          <div
+            className="session-header-btn-container"
+            onClick={() => { void refreshList() }}
+          >
+            <Icon className="menu-button" title="Refresh Session" icon={RefrshIcon} size={16} />
+          </div>
+        </div>
       </div>
 
       {/* Session list */}
@@ -300,25 +349,11 @@ export default function Widget (props: AllWidgetProps<IMConfig>) {
 
       {/* Delete confirmation modal */}
       {confirmDelete && (
-        <div className="delete-confirm-overlay">
-          <div className="delete-confirm-dialog">
-            <p>Delete "<strong>{confirmDelete.label}</strong>"?</p>
-            <div className="delete-confirm-actions">
-              <button
-                className="jimu-btn jimu-btn-danger"
-                onClick={confirmDeleteAction}
-              >
-                Delete
-              </button>
-              <button
-                className="jimu-btn"
-                onClick={() => setConfirmDelete(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <WorkspaceDeleteConfirm
+          data={confirmDelete}
+          onConfirm={confirmDeleteAction}
+          onClose={() => setConfirmDelete(null)}
+        />
       )}
 
       {/* Footer */}

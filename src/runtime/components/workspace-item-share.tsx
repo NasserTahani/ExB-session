@@ -30,7 +30,9 @@ export const WorkspaceItemShare = function (props: WorkspaceItemShareProps) {
       <ModalHeader>Import a Session</ModalHeader>
       <ModalBody>
         <div>
-          <label className="w-100">Portal Item ID
+          <h6 className="w-100">Enter the portal item id of the session you want to import.
+            <br />
+            <br />
             <TextInput
               className="w-100"
               value={itemId}
@@ -38,9 +40,9 @@ export const WorkspaceItemShare = function (props: WorkspaceItemShareProps) {
               onKeyDown={onKeyDown}
               type="text"
               size="lg"
-              placeholder="Enter shared portal item id"
+              placeholder="portal item id"
             />
-          </label>
+          </h6>
         </div>
       </ModalBody>
       <ModalFooter>

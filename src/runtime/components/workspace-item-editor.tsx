@@ -50,7 +50,9 @@ export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
       <ModalBody>
         <div>
           {isNew ? (
-            <label className="w-75">Name
+            <h6 className="w-75">Add a name for your session.
+              <br />
+              <br />
               <TextInput
                 className="w-100"
                 value={label}
@@ -58,14 +60,18 @@ export const WorkspaceItemEditor = function (props: WorkspaceItemEditorProps) {
                 onKeyDown={onKeyDown}
                 type="text"
                 size="lg"
-                placeholder="Enter session name…"
+                placeholder="Session name"
               />
-            </label>
+            </h6>
           ) : (
-            <p>
-              <b>Overwrite</b> button to overwrite the existing session <br />
-              <b>Save a Copy</b> to create a versioned copy of the session
-            </p>
+            <div>
+              <h6>Do you want to overwrite the existing session or save a copy as a new session? </h6>
+              <br />
+              <ul>
+                <li>By the <b>Overwrite</b> button you can overwrite the existing session</li>
+                <li>By the <b>Save a Copy</b> button you can create a new session with the same map state and a different name</li>
+              </ul>
+            </div>
           )
           }
         </div>
