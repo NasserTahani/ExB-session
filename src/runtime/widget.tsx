@@ -30,7 +30,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 
   // State variables
   const [jimuMapView, setJimuMapView] = useState<JimuMapView | null>(null)
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(null)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<{ id: number, message: string, severity: NoticeSeverity } | null>(null)
 
@@ -358,7 +358,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 
       {/* Footer */}
       <div className="info-footer workspaces-content-center">
-        {workspaces.length > 0 && <span>{workspaces.length} session(s)</span>}
+        {workspaces && workspaces.length > 0 && <span>{workspaces.length} session(s)</span>}
       </div>
     </div>
   )

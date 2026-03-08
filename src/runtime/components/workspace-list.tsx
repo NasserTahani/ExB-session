@@ -1,10 +1,8 @@
 /* eslint-disable no-prototype-builtins */
 /** @jsx jsx */
-import { jsx } from 'jimu-core'
+import { jsx, React } from 'jimu-core'
 import { Icon } from 'jimu-ui'
 import { type Workspace } from '../models'
-// import DeleteIcon from '../assets/icons/delete.svg'
-// import EditIcon from '../assets/icons/edit.svg'
 import EditIcon from "jimu-icons/svg/outlined/editor/edit.svg"
 import DeleteIcon from "jimu-icons/svg/outlined/editor/trash.svg"
 import EmptyIcon from "jimu-icons/svg/outlined/data/column.svg"
@@ -23,9 +21,13 @@ export interface WorkspaceListProps {
  * - The delete icon triggers deletion (with confirmation handled by the parent).
  */
 export const WorkspaceList = function (props: WorkspaceListProps) {
+
+  const [activeWorkspaceId, setActiveWorkspaceId] = React.useState<string>(null)
+
   const onOpenClick = (ev: React.MouseEvent, ws: Workspace) => {
     ev.stopPropagation()
     props.onWorkspaceOpen(ws)
+    setActiveWorkspaceId(ws.id)
   }
 
   const onEditClick = (ev: React.MouseEvent, ws: Workspace) => {
@@ -40,18 +42,18 @@ export const WorkspaceList = function (props: WorkspaceListProps) {
 
   return (
     <div className="session-list">
-      {props.data.length === 0 && (
+      {props.data && props.data.length === 0 && (
         <div className="no-content">
           <Icon className="no-content-icon" icon={EmptyIcon} size={40}/>
           
-          <p>No saved sessions</p>
-          <p>Click <b>+</b> to save your current workspace</p>
+          <p>No saved session</p>
+          <p>Click <strong>+</strong> to save your current workspace</p>
         </div>
       )}
 
-      {props.data.map((workspace: Workspace) => (
+      {props.data && props.data.map((workspace: Workspace) => (
         <div
-          className="session-item"
+          className= {activeWorkspaceId === workspace.id ? 'session-item-focused' : 'session-item'}
           key={workspace.id}
           onClick={(ev) => { onOpenClick(ev, workspace) }}
         >

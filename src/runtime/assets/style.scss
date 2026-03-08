@@ -55,8 +55,17 @@
         background-color: #F0F4F9;
     }
 
-    .session-item-selected {
-        background-color: red;
+    .session-item-focused {
+        cursor: pointer;
+        user-select: none;
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        border-bottom: 0.01rem solid rgb(197, 197, 197);
+        align-items: center;
+        padding: 6px;
+        background-color: rgb(206, 224, 249);
     }
 
     .session-item-icon-wrappers{
