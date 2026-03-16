@@ -12,6 +12,7 @@ export interface WorkspaceListProps {
   onWorkspaceOpen: (workspace: Workspace) => void
   onWorkspaceEdit: (workspace: Workspace) => void
   onWorkspaceDelete: (workspace: Workspace) => void
+  activeWorkspaceId: string | null
 }
 
 /**
@@ -21,13 +22,9 @@ export interface WorkspaceListProps {
  * - The delete icon triggers deletion (with confirmation handled by the parent).
  */
 export const WorkspaceList = function (props: WorkspaceListProps) {
-
-  const [activeWorkspaceId, setActiveWorkspaceId] = React.useState<string>(null)
-
   const onOpenClick = (ev: React.MouseEvent, ws: Workspace) => {
     ev.stopPropagation()
     props.onWorkspaceOpen(ws)
-    setActiveWorkspaceId(ws.id)
   }
 
   const onEditClick = (ev: React.MouseEvent, ws: Workspace) => {
@@ -53,7 +50,7 @@ export const WorkspaceList = function (props: WorkspaceListProps) {
 
       {props.data && props.data.map((workspace: Workspace) => (
         <div
-          className= {activeWorkspaceId === workspace.id ? 'session-item-focused' : 'session-item'}
+          className= {props.activeWorkspaceId === workspace.id ? 'session-item-focused' : 'session-item'}
           key={workspace.id}
           onClick={(ev) => { onOpenClick(ev, workspace) }}
         >

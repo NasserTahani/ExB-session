@@ -41,6 +41,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
 
   const portalRef = useRef<Portal | null>(null)
   const noticeIdRef = useRef(0) // Incremental ID for notices to ensure unique keys
+  const [activeWorkspaceId, setActiveWorkspaceId] = React.useState<string | null>(null)
 
   /**
    * Utility to show a status message with a specific severity. messages disappear after 5 seconds.
@@ -170,6 +171,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
         : isExisting && mode === 'save-version'
           ? `Session ${ws.label} duplicated successfully`
           : 'Current session saved'
+      setActiveWorkspaceId(saved.id)
       showNotice(successMessage, 'success')
     }
   }, [jimuMapView, getPortal, run, showNotice])
@@ -185,6 +187,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
     }
     const loaded = await run(() => loadMapSession(getPortal(), ws.id, jimuMapView))
     if (loaded) {
+      setActiveWorkspaceId(ws.id)
       await refreshList(ws)
       showNotice(`Session ${ws.label} loaded successfully`, 'success')
     }
@@ -227,6 +230,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
     const loaded = await run(() => loadMapSession(getPortal(), imported.id, jimuMapView))
     if (loaded) {
       await refreshList(imported)
+      setActiveWorkspaceId(imported.id)
       showNotice(`Session ${imported.label} imported successfully`, 'success')
     }
   }, [jimuMapView, getPortal, refreshList, run, showNotice])
@@ -243,6 +247,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
       setWorkspaces(prev => prev.filter(w => w.id !== confirmDelete.id))
       setConfirmDelete(null)
       showNotice(`Session ${confirmDelete.label} deleted successfully`, 'success')
+      setActiveWorkspaceId(prev => prev === confirmDelete.id ? null : prev)
     } catch (e: any) {
       console.error(e)
       setError(e?.message || 'An unexpected error occurred')
@@ -328,6 +333,7 @@ export default function Widget(props: AllWidgetProps<IMConfig>) {
         onWorkspaceOpen={handleWorkspaceOpen}
         onWorkspaceEdit={handleWorkspaceEdit}
         onWorkspaceDelete={handleWorkspaceDelete}
+        activeWorkspaceId={activeWorkspaceId}
       />
 
       {/* Editor modal */}
