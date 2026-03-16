@@ -23,8 +23,8 @@ jobs:
 
       - name: Download ArcGIS Experience Builder
         run: |
-          curl -o exb.zip "$(curl -s '${{ env.ARCGIS_DOWNLOAD_URL }}'
-          python3 -c "import sys, json; print(json.load(sys.stdin)['url'])")"
+          DOWNLOAD_URL=$(curl -s "${{ env.ARCGIS_DOWNLOAD_URL }}" | python3 -c "import sys,json; print(json.load(sys.stdin)['url'])")
+          curl -L -o exb.zip "$DOWNLOAD_URL"
 
       - name: Unzip ArcGIS Experience Builder
         run: |
