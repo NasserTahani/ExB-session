@@ -36,7 +36,7 @@ jobs:
           cp -r src manifest.json config.json icon.svg exb/ArcGISExperienceBuilder/client/your-extensions/widgets/save-session/
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         working-directory: exb/ArcGISExperienceBuilder/client
 
       - name: Build widget
