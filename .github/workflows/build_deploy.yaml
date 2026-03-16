@@ -32,8 +32,8 @@ jobs:
 
       - name: Copy source code to ArcGIS Experience Builder
         run: |
-          mkdir -p exb/client/your-extensions/widgets/save-session
-          cp -r src manifest.json config.json icon.svg exb/client/your-extensions/widgets/save-session/
+          mkdir -p exb/client/your-extensions/widgets/watercare-save-session
+          cp -r src manifest.json config.json icon.svg exb/client/your-extensions/widgets/watercare-save-session/
 
       - name: Install dependencies
         run: npm ci
@@ -47,4 +47,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: save-session-widget
-          path: exb/client/dist/widgets/save-session
+          path: exb/client/dist/widgets/watercare-save-session
