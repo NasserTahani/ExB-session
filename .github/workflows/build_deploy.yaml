@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ExbVersion: 1.19
+      ARCGIS_DOWNLOAD_URL: https://downloads.arcgis.com/dms/rest/download/secured/arcgis-experience-builder-1.19.zip?f=json&folder=software%2FExperienceBuilder%2F1.19
 
     steps:
       - name: Checkout code
@@ -21,26 +21,30 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Download and unzip ArcGIS Experience Builder
+      - name: Download ArcGIS Experience Builder
         run: |
-          npx arcgis-lib-downloader -p arcgis-experience-builder -v ${{ env.ExbVersion }}
-          unzip -q arcgis-experience-builder-${{ env.ExbVersion }}.zip -d arcgis-experience-builder-${{ env.ExbVersion }}
+          curl -o exb.zip "$(curl -s '${{ env.ARCGIS_DOWNLOAD_URL }}'
+          python3 -c "import sys, json; print(json.load(sys.stdin)['url'])")"
+
+      - name: Unzip ArcGIS Experience Builder
+        run: |
+          unzip -q exb.zip -d exb
 
       - name: Copy source code to ArcGIS Experience Builder
         run: |
-          mkdir -p arcgis-experience-builder-${{ env.ExbVersion }}/client/your-extensions/widgets/save-session
-          cp -r src manifest.json config.json icon.svg arcgis-experience-builder-${{ env.ExbVersion }}/client/your-extensions/widgets/save-session/
+          mkdir -p exb/ArcGISExperienceBuilder/client/your-extensions/widgets/save-session
+          cp -r src manifest.json config.json icon.svg exb/ArcGISExperienceBuilder/client/your-extensions/widgets/save-session/
 
       - name: Install dependencies
         run: npm ci
-        working-directory: arcgis-experience-builder-${{ env.ExbVersion }}/client
+        working-directory: exb/ArcGISExperienceBuilder/client
 
       - name: Build widget
         run: npm run build
-        working-directory: arcgis-experience-builder-${{ env.ExbVersion }}/client
+        working-directory: exb/ArcGISExperienceBuilder/client
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: save-session-widget
-          path: arcgis-experience-builder-${{ env.ExbVersion }}/client/dist/widgets/save-session
+          path: exb/ArcGISExperienceBuilder/client/dist/widgets/save-session
