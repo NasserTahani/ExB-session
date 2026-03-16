@@ -40,7 +40,7 @@ jobs:
         working-directory: exb/client
 
       - name: Build widget
-        run: npm run build
+        run: npm run build:prod
         working-directory: exb/client
 
       - name: Upload artifact
